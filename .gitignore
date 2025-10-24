@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Node modules
 node_modules/
 
@@ -19,3 +20,12 @@ build/
 # System
 .DS_Store
 Thumbs.db
+=======
+node_modules/
+.env
+.env.local
+*.log
+logs/
+dist/
+coverage/
+>>>>>>> 0a365f596d73dc7b10c43cf36d7eedd3def222b5
