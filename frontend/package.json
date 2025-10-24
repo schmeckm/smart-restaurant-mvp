@@ -1,0 +1,31 @@
+{
+  "name": "restaurant-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "serve": "vue-cli-service serve",
+    "build": "vue-cli-service build",
+    "lint": "vue-cli-service lint"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
+    "axios": "^1.6.0",
+    "chart.js": "^4.5.0",
+    "dayjs": "^1.11.18",
+    "element-plus": "^2.11.5",
+    "js-cookie": "^3.0.5",
+    "vue": "^3.3.4",
+    "vue-chartjs": "^5.3.2",
+    "vue-router": "^4.2.5",
+    "vuex": "^4.1.0"
+  },
+  "devDependencies": {
+    "@vue/cli-plugin-babel": "^5.0.9",
+    "@vue/cli-plugin-eslint": "^5.0.9",
+    "@vue/cli-plugin-router": "^5.0.9",
+    "@vue/cli-plugin-vuex": "^5.0.9",
+    "@vue/cli-service": "^5.0.9",
+    "sass": "^1.93.2",
+    "sass-loader": "^16.0.5"
+  }
+}

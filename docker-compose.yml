@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: restaurant-db
+    environment:
+      POSTGRES_DB: restaurant_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: your_secure_password
+    ports:
+      - "5432:5432"
+    networks:
+      - restaurant-network
+
+  backend:
+    build: ./backend
+    container_name: restaurant-backend
+    ports:
+      - "3000:3000"
+    networks:
+      - restaurant-network
+
+  frontend:
+    build: ./frontend
+    container_name: restaurant-frontend
+    ports:
+      - "8080:80"
+    networks:
+      - restaurant-network
+
+networks:
+  restaurant-network:
+    driver: bridge
