@@ -1,82 +1,107 @@
-// backend/src/models/Ingredient.js - SIMPLE WORKING VERSION
+// backend/models/Ingredient.js
+// Ingredient Model OHNE Nutrition-Felder (die sind jetzt in separater Tabelle)
+
 const { DataTypes } = require('sequelize');
-const sequelize = require('../config/database');
 
-const Ingredient = sequelize.define('Ingredient', {
-  id: {
-    type: DataTypes.UUID,
-    defaultValue: DataTypes.UUIDV4,
-    primaryKey: true
-  },
-  name: {
-    type: DataTypes.STRING,
-    allowNull: false,
-    unique: true
-  },
-  unit: {
-    type: DataTypes.STRING,
-    allowNull: false,
-    defaultValue: 'g'
-  },
-  cost_per_unit: {
-    type: DataTypes.DECIMAL(10, 2),
-    allowNull: false,
-    defaultValue: 0
-  },
-  stock_quantity: {
-    type: DataTypes.DECIMAL(10, 2),
-    defaultValue: 0
-  },
-  min_stock: {
-    type: DataTypes.DECIMAL(10, 2),
-    defaultValue: 0
-  },
-  supplier: {
-    type: DataTypes.STRING,
-    allowNull: true
-  },
-  category: {
-    type: DataTypes.STRING,
-    defaultValue: 'other'
-  },
-  
-  // Basic nutrition (existing columns)
-  calories: {
-    type: DataTypes.DECIMAL(8, 2),
-    defaultValue: 0
-  },
-  protein: {
-    type: DataTypes.DECIMAL(8, 2),
-    defaultValue: 0
-  },
-  carbs: {
-    type: DataTypes.DECIMAL(8, 2),
-    defaultValue: 0
-  },
-  fat: {
-    type: DataTypes.DECIMAL(8, 2),
-    defaultValue: 0
-  },
-  fiber: {
-    type: DataTypes.DECIMAL(8, 2),
-    defaultValue: 0
-  },
-  sugar: {
-    type: DataTypes.DECIMAL(8, 2),
-    defaultValue: 0
-  },
-  sodium: {
-    type: DataTypes.DECIMAL(8, 2),
-    defaultValue: 0
-  },
-  
-  is_active: {
-    type: DataTypes.BOOLEAN,
-    defaultValue: true
-  }
-}, {
-  tableName: 'ingredients',
-  timestamps: true
-});
+module.exports = (sequelize) => {
+  const Ingredient = sequelize.define('Ingredient', {
+    id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true
+    },
+    name: {
+      type: DataTypes.STRING(255),
+      allowNull: false,
+      unique: true,
+      validate: {
+        notEmpty: true
+      }
+    },
+    unit: {
+      type: DataTypes.STRING(50),
+      allowNull: false,
+      comment: 'Einheit: g, ml, kg, l, Stück, etc.'
+    },
+    price_per_unit: {
+      type: DataTypes.DECIMAL(10, 2),
+      defaultValue: 0,
+      comment: 'Preis pro Einheit (z.B. pro g, pro ml)'
+    },
+    stock_quantity: {
+      type: DataTypes.DECIMAL(10, 2),
+      defaultValue: 0,
+      comment: 'Aktueller Lagerbestand'
+    },
+    min_stock: {
+      type: DataTypes.DECIMAL(10, 2),
+      defaultValue: 0,
+      comment: 'Mindestbestand (für Warnungen)'
+    },
+    supplier: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: 'Lieferant/Hersteller'
+    }
+  }, {
+    tableName: 'ingredients',
+    timestamps: true,
+    underscored: true,
+    indexes: [
+      {
+        fields: ['name']
+      },
+      {
+        fields: ['supplier']
+      }
+    ]
+  });
 
-module.exports = Ingredient;
+  // Associations
+  Ingredient.associate = (models) => {
+    // M:N mit Products über ProductIngredient
+    Ingredient.belongsToMany(models.Product, {
+      through: models.ProductIngredient,
+      foreignKey: 'ingredient_id',
+      as: 'products'
+    });
+
+    // 1:1 mit Nutrition (polymorphic)
+    Ingredient.hasOne(models.Nutrition, {
+      foreignKey: 'entity_id',
+      constraints: false,
+      scope: {
+        entity_type: 'ingredient'
+      },
+      as: 'nutrition'
+    });
+  };
+
+  // Instance Methods
+  Ingredient.prototype.getNutrition = async function() {
+    const models = require('./index');
+    return await models.Nutrition.findOne({
+      where: {
+        entity_type: 'ingredient',
+        entity_id: this.id
+      }
+    });
+  };
+
+  Ingredient.prototype.isLowStock = function() {
+    return this.stock_quantity <= this.min_stock;
+  };
+
+  Ingredient.prototype.getTotalValue = function() {
+    return parseFloat(this.stock_quantity) * parseFloat(this.price_per_unit);
+  };
+
+  // Class Methods
+  Ingredient.getLowStockIngredients = async function() {
+    return await Ingredient.findAll({
+      where: sequelize.literal('stock_quantity <= min_stock')
+    });
+  };
+
+  return Ingredient;
+};
