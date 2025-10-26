@@ -1,8 +1,33 @@
 // frontend/src/store/modules/products.js
-// COMPLETE CORRECTED VERSION
+// ✅ OPTIMIERTE, PRODUKTIONSREIFE VERSION
 
 import request from '@/utils/request'
+import { ElMessage } from 'element-plus'
 
+// ===============================
+// Axios Interceptors
+// ===============================
+request.interceptors.request.use(config => {
+  const token = localStorage.getItem('token')
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
+})
+
+request.interceptors.response.use(
+  response => response,
+  error => {
+    console.error('❌ API Error:', error.response?.data || error.message)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🧩 Full error:', error)
+    }
+    ElMessage.error(error.response?.data?.message || 'Serverfehler aufgetreten')
+    return Promise.reject(error)
+  }
+)
+
+// ===============================
+// State
+// ===============================
 const state = {
   products: [],
   currentProduct: null,
@@ -14,6 +39,9 @@ const state = {
   }
 }
 
+// ===============================
+// Mutations
+// ===============================
 const mutations = {
   SET_PRODUCTS(state, products) {
     state.products = products
@@ -25,16 +53,13 @@ const mutations = {
     state.products.push(product)
   },
   UPDATE_PRODUCT(state, updatedProduct) {
-    const index = state.products.findIndex(prod => prod.id === updatedProduct.id);
+    const index = state.products.findIndex(p => p.id === updatedProduct.id)
     if (index !== -1) {
-      state.products.splice(index, 1, { ...state.products[index], ...updatedProduct });
+      state.products.splice(index, 1, { ...state.products[index], ...updatedProduct })
     }
   },
   REMOVE_PRODUCT(state, productId) {
-    const index = state.products.findIndex(prod => prod.id === productId);
-    if (index !== -1) {
-      state.products.splice(index, 1);
-    }
+    state.products = state.products.filter(p => p.id !== productId)
   },
   SET_LOADING(state, loading) {
     state.loading = loading
@@ -44,13 +69,13 @@ const mutations = {
   }
 }
 
-// Helper function to normalize ingredient data
+// ===============================
+// Helper Functions
+// ===============================
 const normalizeIngredients = (ingredients) => {
-  if (!ingredients || !Array.isArray(ingredients)) return []
-  
+  if (!Array.isArray(ingredients)) return []
   return ingredients.map(ing => ({
     ...ing,
-    // Flatten ProductIngredient data to top level
     quantity: ing.ProductIngredient?.quantity || ing.quantity || 0,
     unit: ing.ProductIngredient?.unit || ing.unit || 'g',
     preparationNote: ing.ProductIngredient?.preparationNote || ing.preparationNote,
@@ -59,199 +84,101 @@ const normalizeIngredients = (ingredients) => {
   }))
 }
 
+const normalizeProduct = (product) => {
+  if (!product) return null
+  return {
+    ...product,
+    ingredients: normalizeIngredients(product.ingredients)
+  }
+}
+
+// ===============================
+// Actions
+// ===============================
 const actions = {
-  // ==========================================
-  // FETCH PRODUCTS
-  // ==========================================
+  // FETCH ALL PRODUCTS
   async fetchProducts({ commit }, params = {}) {
     commit('SET_LOADING', true)
     try {
-      console.log('📥 Fetching products with params:', params)
-      
-      const response = await request.get('/products', { params })
-      
-      const responseData = response.data
-      const data = responseData.data || responseData
-      let products = data.products || data || []
-      
-      // Normalize ingredients if present
-      products = products.map(product => ({
-        ...product,
-        ingredients: normalizeIngredients(product.ingredients)
-      }))
-      
-      console.log('✅ Fetched products:', products.length)
-      
+      const res = await request.get('/products', { params })
+      const data = res.data.data || res.data
+      const products = (data.products || data || []).map(normalizeProduct)
+
       commit('SET_PRODUCTS', products)
-      
-      // Handle pagination
-      if (data.pagination) {
-        commit('SET_PAGINATION', data.pagination)
-      } else if (responseData.pagination) {
-        commit('SET_PAGINATION', {
-          page: responseData.pagination.page,
-          total: responseData.pagination.total,
-          limit: responseData.pagination.limit
-        })
-      }
-      
-      return response
-    } catch (error) {
-      console.error('❌ Error fetching products:', error)
-      commit('SET_PRODUCTS', [])
-      throw error
+      commit('SET_PAGINATION', data.pagination || res.data.pagination || {})
+      return res
     } finally {
       commit('SET_LOADING', false)
     }
   },
 
-  // ==========================================
   // FETCH SINGLE PRODUCT
-  // ==========================================
-  async fetchProduct({ commit }, productId) {
-    try {
-      console.log('📥 Fetching product:', productId)
-      
-      const response = await request.get(`/products/${productId}`)
-      let product = response.data?.data || response.data
-      
-      // Normalize ingredients
-      if (product && product.ingredients) {
-        product.ingredients = normalizeIngredients(product.ingredients)
-      }
-      
-      commit('SET_CURRENT_PRODUCT', product)
-      
-      return product
-    } catch (error) {
-      console.error('❌ Error fetching product:', error)
-      return null
-    }
+  async fetchProduct({ commit }, id) {
+    const res = await request.get(`/products/${id}`)
+    const product = normalizeProduct(res.data.data || res.data)
+    commit('SET_CURRENT_PRODUCT', product)
+    return product
   },
 
-  // ==========================================
   // CREATE PRODUCT
-  // ==========================================
-  async createProduct({ commit, dispatch }, productData) {
-    try {
-      console.log('📝 Creating product:', productData.name)
-      
-      const productPayload = {
-        name: productData.name,
-        category: productData.category,
-        price: productData.price,
-        cost: productData.cost,
-        description: productData.description,
-        is_available: productData.is_available !== undefined ? productData.is_available : true
-      }
-
-      console.log('📤 Sending product payload:', productPayload)
-
-      const response = await request.post('/products', productPayload)
-      let product = response.data?.data || response.data
-      
-      // Normalize ingredients if present
-      if (product && product.ingredients) {
-        product.ingredients = normalizeIngredients(product.ingredients)
-      }
-      
-      console.log('✅ Product created with ID:', product.id)
-      commit('ADD_PRODUCT', product)
-
-      return product
-    } catch (error) {
-      console.error('❌ Error creating product:', error)
-      console.error('Error response:', error.response?.data)
-      throw error
+  async createProduct({ commit }, productData) {
+    const payload = {
+      name: productData.name,
+      category: productData.category,
+      price: productData.price,
+      cost: productData.cost,
+      description: productData.description,
+      is_available: productData.is_available ?? true
     }
+
+    const res = await request.post('/products', payload)
+    const product = normalizeProduct(res.data.data || res.data)
+    commit('ADD_PRODUCT', product)
+    ElMessage.success('✅ Produkt erfolgreich erstellt')
+    return product
   },
 
-  // ==========================================
-  // UPDATE PRODUCT (FIXED)
-  // ==========================================
-  async updateProduct({ commit }, { id, data: productData }) {
-    try {
-      console.log('🔄 Updating product:', id, 'with data:', productData)
-      
-      const response = await request.put(`/products/${id}`, productData)
-      let product = response.data?.data || response.data
-      
-      console.log('✅ Product update response:', response.data)
-      
-      // Normalize ingredients if present
-      if (product && product.ingredients) {
-        product.ingredients = normalizeIngredients(product.ingredients)
-      }
-      
-      // Direct state update
-      if (product) {
-        commit('UPDATE_PRODUCT', product)
-      } else {
-        // Fallback: Merge with existing data
-        commit('UPDATE_PRODUCT', { id, ...productData })
-      }
-      
-      return response
-    } catch (error) {
-      console.error('❌ Error updating product:', error)
-      console.error('API Error Details:', error.response?.data)
-      throw error
-    }
+  // UPDATE PRODUCT
+  async updateProduct({ commit }, { id, data }) {
+    const res = await request.put(`/products/${id}`, data)
+    const updated = normalizeProduct(res.data.data || res.data)
+    commit('UPDATE_PRODUCT', updated)
+    ElMessage.success('🔄 Produkt aktualisiert')
+    return updated
   },
 
-  // ==========================================
-  // DELETE PRODUCT (FIXED)
-  // ==========================================
-  async deleteProduct({ commit, dispatch }, id) {
+  // DELETE PRODUCT (optimistisches Update)
+  async deleteProduct({ commit }, id) {
+    commit('REMOVE_PRODUCT', id)
     try {
-      console.log('🗑️ Deleting product:', id)
-      
       await request.delete(`/products/${id}`)
-      
-      console.log('✅ Product deleted successfully')
-      commit('REMOVE_PRODUCT', id)
-      
+      ElMessage.success('🗑️ Produkt gelöscht')
     } catch (error) {
-      console.error('❌ Error deleting product:', error)
-      // Bei Fehler: Reload zur Sicherheit
-      await dispatch('fetchProducts')
+      ElMessage.warning('⚠️ Fehler beim Löschen, Daten werden neu geladen')
       throw error
     }
   },
 
-  // ==========================================
   // SEARCH PRODUCTS
-  // ==========================================
   async searchProducts({ commit }, searchParams) {
     commit('SET_LOADING', true)
     try {
-      const response = await request.get('/products/search', { params: searchParams })
-      
-      const data = response.data?.data || response.data
-      let products = data.products || data || []
-      
-      // Normalize ingredients
-      products = products.map(product => ({
-        ...product,
-        ingredients: normalizeIngredients(product.ingredients)
-      }))
-      
+      const res = await request.get('/products/search', { params: searchParams })
+      const data = res.data.data || res.data
+      const products = (data.products || data || []).map(normalizeProduct)
+
       commit('SET_PRODUCTS', products)
-      
-      if (data.pagination) {
-        commit('SET_PAGINATION', data.pagination)
-      }
-      
-      return response
-    } catch (error) {
-      console.error('Error searching products:', error)
-      throw error
+      commit('SET_PAGINATION', data.pagination || {})
+      return res
     } finally {
       commit('SET_LOADING', false)
     }
   }
 }
 
+// ===============================
+// Getters
+// ===============================
 const getters = {
   products: state => state.products,
   currentProduct: state => state.currentProduct,
@@ -259,12 +186,14 @@ const getters = {
   pagination: state => state.pagination,
   productsWithRecipes: state => state.products.filter(p => p.instructions),
   productsWithoutRecipes: state => state.products.filter(p => !p.instructions),
-  productsByCategory: (state) => (category) => {
-    return state.products.filter(p => p.category === category)
-  },
+  productsByCategory: state => category =>
+    state.products.filter(p => p.category === category),
   availableProducts: state => state.products.filter(p => p.is_available)
 }
 
+// ===============================
+// Export Store
+// ===============================
 export default {
   namespaced: true,
   state,
