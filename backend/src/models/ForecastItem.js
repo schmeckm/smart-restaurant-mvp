@@ -1,3 +1,6 @@
+// backend/src/models/ForecastItem.js
+// Forecast Item Model - Individual forecast entries per product per period
+
 module.exports = (sequelize, DataTypes) => {
   const ForecastItem = sequelize.define(
     'ForecastItem',
@@ -25,15 +28,34 @@ module.exports = (sequelize, DataTypes) => {
           key: 'id',
         },
       },
+      periodIndex: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        field: 'period_index',
+        comment: 'Period number (e.g. week 1, week 2, etc.)'
+      },
+      periodLabel: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+        field: 'period_label',
+        comment: 'Human-readable period label (e.g. "KW 42", "Nov 2024")'
+      },
       quantity: {
         type: DataTypes.FLOAT,
         allowNull: false,
-      },
+        defaultValue: 0,
+        comment: 'Forecasted quantity for this product in this period'
+      }
     },
     {
       tableName: 'forecast_items',
       timestamps: true,
-      underscored: true, // 🔹 wichtig für created_at / updated_at
+      underscored: true,
+      indexes: [
+        { fields: ['version_id'] },
+        { fields: ['product_id'] },
+        { fields: ['version_id', 'product_id', 'period_index'], unique: true }
+      ]
     }
   );
 

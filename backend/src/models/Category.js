@@ -1,5 +1,9 @@
 // backend/src/models/Category.js
-module.exports = (sequelize, DataTypes) => {
+// Fixed Category Model with proper Sequelize import
+
+const { DataTypes } = require('sequelize');
+
+module.exports = (sequelize) => {
   const Category = sequelize.define('Category', {
     id: {
       type: DataTypes.UUID,
@@ -23,18 +27,30 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: true
     },
-    is_active: {
+    isActive: {
       type: DataTypes.BOOLEAN,
-      defaultValue: true
+      defaultValue: true,
+      field: 'is_active'
     },
-    sort_order: {
+    sortOrder: {
       type: DataTypes.INTEGER,
-      defaultValue: 0
+      defaultValue: 0,
+      field: 'sort_order'
     }
   }, {
     tableName: 'categories',
-    timestamps: true
+    timestamps: true,
+    underscored: true
   });
+
+  Category.associate = (models) => {
+    if (models.Product) {
+      Category.hasMany(models.Product, {
+        foreignKey: 'categoryId',
+        as: 'products'
+      });
+    }
+  };
 
   return Category;
 };

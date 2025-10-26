@@ -1,5 +1,7 @@
-// Global styles
-@import './variables.scss';
+// ==============================
+// Global Styles
+// ==============================
+@use './variables.scss' as *; // ersetzt @import
 
 body {
   margin: 0;

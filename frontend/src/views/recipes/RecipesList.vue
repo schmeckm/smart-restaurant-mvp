@@ -11,21 +11,22 @@
     <!-- Recipes Table -->
     <el-card>
       <el-table :data="recipes" v-loading="loading" stripe>
-        <el-table-column label="Produkt" min-width="150">
+        <el-table-column label="Name" min-width="150">
           <template #default="{ row }">
-            {{ row.product?.name || '-' }}
+            {{ row.name || '-' }}
           </template>
         </el-table-column>
 
         <el-table-column label="Zutaten" min-width="200">
           <template #default="{ row }">
+            <!-- 🔧 FIX: Use normalized data (quantity & unit are at ingredient level) -->
             <el-tag 
               v-for="ing in row.ingredients" 
               :key="ing.id" 
               size="small" 
               style="margin-right: 5px; margin-bottom: 5px;"
             >
-              {{ ing.name }} ({{ ing.RecipeIngredient.quantity }} {{ ing.RecipeIngredient.unit }})
+              {{ ing.name }} ({{ ing.quantity || 0 }} {{ ing.unit || 'g' }})
             </el-tag>
             <span v-if="!row.ingredients || row.ingredients.length === 0" style="color: #909399;">
               Keine Zutaten
@@ -36,8 +37,8 @@
         <el-table-column label="Zeiten" width="150">
           <template #default="{ row }">
             <div style="font-size: 12px;">
-              <div>Vorbereitung: {{ row.prep_time || 0 }} min</div>
-              <div>Zubereitung: {{ row.cook_time || 0 }} min</div>
+              <div>Vorbereitung: {{ row.prepTime || row.prep_time || 0 }} min</div>
+              <div>Zubereitung: {{ row.cookTime || row.cook_time || 0 }} min</div>
             </div>
           </template>
         </el-table-column>
@@ -81,29 +82,46 @@
       width="700px"
     >
       <el-form :model="recipeForm" label-width="120px">
-        <el-form-item label="Produkt">
-          <el-select v-model="recipeForm.product_id" placeholder="Produkt wählen" style="width: 100%">
+        <el-form-item label="Name">
+          <el-input v-model="recipeForm.name" placeholder="Rezeptname" />
+        </el-form-item>
+
+        <el-form-item label="Kategorie">
+          <el-select v-model="recipeForm.categoryId" placeholder="Kategorie wählen" style="width: 100%">
             <el-option
-              v-for="product in products"
-              :key="product.id"
-              :label="product.name"
-              :value="product.id"
+              v-for="cat in categories"
+              :key="cat.id"
+              :label="cat.name"
+              :value="cat.id"
             />
           </el-select>
         </el-form-item>
 
+        <el-form-item label="Preis">
+          <el-input-number v-model="recipeForm.price" :min="0" :step="0.1" :precision="2" style="width: 100%" />
+          <span style="margin-left: 10px; color: #909399;">€</span>
+        </el-form-item>
+
         <el-form-item label="Vorbereitung">
-          <el-input-number v-model="recipeForm.prep_time" :min="0" style="width: 100%" />
+          <el-input-number v-model="recipeForm.prepTime" :min="0" style="width: 100%" />
           <span style="margin-left: 10px; color: #909399;">Minuten</span>
         </el-form-item>
 
         <el-form-item label="Zubereitung">
-          <el-input-number v-model="recipeForm.cook_time" :min="0" style="width: 100%" />
+          <el-input-number v-model="recipeForm.cookTime" :min="0" style="width: 100%" />
           <span style="margin-left: 10px; color: #909399;">Minuten</span>
         </el-form-item>
 
         <el-form-item label="Portionen">
           <el-input-number v-model="recipeForm.servings" :min="1" style="width: 100%" />
+        </el-form-item>
+
+        <el-form-item label="Schwierigkeit">
+          <el-select v-model="recipeForm.difficulty" style="width: 100%">
+            <el-option label="Einfach" value="easy" />
+            <el-option label="Mittel" value="medium" />
+            <el-option label="Schwer" value="hard" />
+          </el-select>
         </el-form-item>
 
         <el-form-item label="Anleitung">
@@ -120,7 +138,7 @@
               style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;"
             >
               <el-select 
-                v-model="ing.ingredient_id" 
+                v-model="ing.ingredientId" 
                 placeholder="Zutat wählen"
                 filterable
                 style="flex: 2;"
@@ -151,10 +169,9 @@
                 <el-option label="kg" value="kg" />
                 <el-option label="ml" value="ml" />
                 <el-option label="l" value="l" />
-                <el-option label="Stück" value="Stück" />
-                <el-option label="TL" value="TL" />
-                <el-option label="EL" value="EL" />
-                <el-option label="Prise" value="Prise" />
+                <el-option label="Stück" value="piece" />
+                <el-option label="TL" value="tsp" />
+                <el-option label="EL" value="tbsp" />
               </el-select>
 
               <el-button 
@@ -200,26 +217,32 @@ const store = useStore()
 const recipes = computed(() => store.getters['recipes/recipes'])
 const loading = computed(() => store.getters['recipes/loading'])
 const pagination = computed(() => store.getters['recipes/pagination'])
-const products = computed(() => store.getters['products/products'] || [])
+const categories = computed(() => store.getters['categories/categories'] || [])
 const ingredients = computed(() => store.getters['ingredients/ingredients'] || [])
 
 const showCreateDialog = ref(false)
 const editingRecipe = ref(null)
 const recipeForm = reactive({
-  product_id: '',
-  prep_time: 0,
-  cook_time: 0,
+  name: '',
+  categoryId: '',
+  price: 0,
+  prepTime: 0,
+  cookTime: 0,
   servings: 1,
+  difficulty: 'easy',
   instructions: '',
   ingredients: []
 })
 
 const resetForm = () => {
   Object.assign(recipeForm, {
-    product_id: '',
-    prep_time: 0,
-    cook_time: 0,
+    name: '',
+    categoryId: '',
+    price: 0,
+    prepTime: 0,
+    cookTime: 0,
     servings: 1,
+    difficulty: 'easy',
     instructions: '',
     ingredients: []
   })
@@ -228,7 +251,7 @@ const resetForm = () => {
 
 const addIngredient = () => {
   recipeForm.ingredients.push({
-    ingredient_id: '',
+    ingredientId: '',
     quantity: 0,
     unit: 'g'
   })
@@ -248,8 +271,8 @@ const handleSearch = () => {
 const handleCreate = () => {
   resetForm()
   // Load data if not loaded
-  if (!products.value || products.value.length === 0) {
-    store.dispatch('products/fetchProducts', { limit: 100 })
+  if (!categories.value || categories.value.length === 0) {
+    store.dispatch('categories/fetchCategories')
   }
   if (!ingredients.value || ingredients.value.length === 0) {
     store.dispatch('ingredients/fetchIngredients', { limit: 100 })
@@ -261,33 +284,30 @@ const handleEdit = (recipe) => {
   editingRecipe.value = recipe
   
   // Load data if not loaded
-  if (!products.value || products.value.length === 0) {
-    store.dispatch('products/fetchProducts', { limit: 100 })
+  if (!categories.value || categories.value.length === 0) {
+    store.dispatch('categories/fetchCategories')
   }
   if (!ingredients.value || ingredients.value.length === 0) {
     store.dispatch('ingredients/fetchIngredients', { limit: 100 })
   }
   
-  // Map ingredients to form format
+  // 🔧 FIX: Ingredients are already normalized, just use them directly
   const mappedIngredients = recipe.ingredients?.map(ing => ({
-    ingredient_id: ing.id,
-    quantity: parseFloat(ing.RecipeIngredient.quantity),
-    unit: ing.RecipeIngredient.unit
+    ingredientId: ing.id,
+    quantity: parseFloat(ing.quantity || 0),
+    unit: ing.unit || 'g'
   })) || []
 
-  // ✅ FIX: Handle both camelCase (API response) and snake_case (DB fields)
   Object.assign(recipeForm, {
-    product_id: recipe.productId || recipe.product_id,  // ⬅️ Beide Varianten prüfen!
-    prep_time: recipe.prepTime || recipe.prep_time || 0,
-    cook_time: recipe.cookTime || recipe.cook_time || 0,
-    servings: recipe.servings || recipe.portions || 1,
+    name: recipe.name || '',
+    categoryId: recipe.categoryId || recipe.category?.id || '',
+    price: recipe.price || 0,
+    prepTime: recipe.prepTime || recipe.prep_time || 0,
+    cookTime: recipe.cookTime || recipe.cook_time || 0,
+    servings: recipe.servings || 1,
+    difficulty: recipe.difficulty || 'easy',
     instructions: recipe.instructions || '',
     ingredients: mappedIngredients
-  })
-  
-  console.log('🔍 Editing recipe:', {
-    product_id: recipeForm.product_id,
-    ingredients: mappedIngredients.length
   })
   
   showCreateDialog.value = true
@@ -296,29 +316,30 @@ const handleEdit = (recipe) => {
 const handleSave = async () => {
   try {
     // Validate
-    if (!recipeForm.product_id) {
-      ElMessage.warning('Bitte wähle ein Produkt')
+    if (!recipeForm.name) {
+      ElMessage.warning('Bitte gib einen Namen ein')
       return
     }
 
-    // ✅ Map to backend camelCase format
     const mappedIngredients = recipeForm.ingredients
-      .filter(ing => ing.ingredient_id && ing.quantity > 0)
+      .filter(ing => ing.ingredientId && ing.quantity > 0)
       .map(ing => ({
-        ingredientId: ing.ingredient_id,  // ⬅️ camelCase!
+        ingredientId: ing.ingredientId,
         quantity: ing.quantity,
         unit: ing.unit
       }))
 
     const payload = {
-      productId: recipeForm.product_id,
-      preparationTime: recipeForm.prep_time,
+      name: recipeForm.name,
+      categoryId: recipeForm.categoryId,
+      price: recipeForm.price,
+      prepTime: recipeForm.prepTime,
+      cookTime: recipeForm.cookTime,
       servings: recipeForm.servings,
+      difficulty: recipeForm.difficulty,
       instructions: recipeForm.instructions,
       ingredients: mappedIngredients
     }
-
-    console.log('🔍 Sending payload:', payload)
 
     if (editingRecipe.value) {
       await store.dispatch('recipes/updateRecipe', {
@@ -342,7 +363,7 @@ const handleSave = async () => {
 const handleDelete = async (recipe) => {
   try {
     await ElMessageBox.confirm(
-      `Möchten Sie das Rezept für "${recipe.product?.name}" wirklich löschen?`,
+      `Möchten Sie das Rezept "${recipe.name}" wirklich löschen?`,
       'Löschen',
       {
         confirmButtonText: 'Löschen',
@@ -361,7 +382,7 @@ const handleDelete = async (recipe) => {
 
 onMounted(() => {
   handleSearch()
-  store.dispatch('products/fetchProducts', { limit: 100 })
+  store.dispatch('categories/fetchCategories')
   store.dispatch('ingredients/fetchIngredients', { limit: 100 })
 })
 </script>

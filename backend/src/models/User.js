@@ -1,4 +1,9 @@
-module.exports = (sequelize, DataTypes) => {
+// backend/src/models/User.js
+// Fixed User Model with proper Sequelize import
+
+const { DataTypes } = require('sequelize');
+
+module.exports = (sequelize) => {
   const User = sequelize.define('User', {
     id: {
       type: DataTypes.UUID,
@@ -8,7 +13,8 @@ module.exports = (sequelize, DataTypes) => {
     googleId: {
       type: DataTypes.STRING,
       unique: true,
-      allowNull: true
+      allowNull: true,
+      field: 'google_id'
     },
     email: {
       type: DataTypes.STRING,
@@ -20,7 +26,7 @@ module.exports = (sequelize, DataTypes) => {
     },
     password: {
       type: DataTypes.STRING,
-      allowNull: true // Kann null sein für Google OAuth users
+      allowNull: true // Can be null for Google OAuth users
     },
     name: {
       type: DataTypes.STRING,
@@ -36,7 +42,8 @@ module.exports = (sequelize, DataTypes) => {
     },
     isActive: {
       type: DataTypes.BOOLEAN,
-      defaultValue: true
+      defaultValue: true,
+      field: 'is_active'
     }
   }, {
     tableName: 'users',
@@ -44,12 +51,21 @@ module.exports = (sequelize, DataTypes) => {
     underscored: true
   });
 
-  // 🔗 Hier kommt die Assoziation hinzu:
+  // Associations will be added in index.js
   User.associate = (models) => {
-    User.hasMany(models.ForecastVersion, {
-      foreignKey: 'createdBy',
-      as: 'forecastVersions'
-    });
+    if (models.Sale) {
+      User.hasMany(models.Sale, {
+        foreignKey: 'userId',
+        as: 'sales'
+      });
+    }
+    
+    if (models.ForecastVersion) {
+      User.hasMany(models.ForecastVersion, {
+        foreignKey: 'createdBy',
+        as: 'forecastVersions'
+      });
+    }
   };
 
   return User;

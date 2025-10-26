@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Node modules
 node_modules/
 
@@ -9,23 +8,16 @@ npm-debug.log*
 
 # Environment files
 .env
-.env.*
+.env.local
+.env.production
 backend/.env
 frontend/.env
 
 # Build output
 dist/
 build/
+coverage/
 
-# System
+# System files
 .DS_Store
 Thumbs.db
-=======
-node_modules/
-.env
-.env.local
-*.log
-logs/
-dist/
-coverage/
->>>>>>> 0a365f596d73dc7b10c43cf36d7eedd3def222b5

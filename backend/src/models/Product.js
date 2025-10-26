@@ -1,14 +1,14 @@
-// backend/models/Product.js
-// Product Model (Gerichte/Speisekarte)
+// backend/src/models/Product.js
+// Fixed Product Model with UUID and Recipe fields
 
 const { DataTypes } = require('sequelize');
 
 module.exports = (sequelize) => {
   const Product = sequelize.define('Product', {
     id: {
-      type: DataTypes.INTEGER,
-      primaryKey: true,
-      autoIncrement: true
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true
     },
     name: {
       type: DataTypes.STRING(255),
@@ -21,10 +21,14 @@ module.exports = (sequelize) => {
       type: DataTypes.TEXT,
       allowNull: true
     },
-    category: {
-      type: DataTypes.STRING(100),
+    categoryId: {
+      type: DataTypes.UUID,
       allowNull: true,
-      comment: 'z.B. Pizza, Pasta, Hauptgericht, Dessert'
+      field: 'category_id',
+      references: {
+        model: 'categories',
+        key: 'id'
+      }
     },
     price: {
       type: DataTypes.DECIMAL(10, 2),
@@ -33,58 +37,98 @@ module.exports = (sequelize) => {
         min: 0
       }
     },
-    image_url: {
-      type: DataTypes.STRING(500),
+    
+    // Recipe-related fields (no separate Recipe table needed!)
+    instructions: {
+      type: DataTypes.TEXT,
       allowNull: true
     },
-    is_active: {
+    prepTime: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      field: 'prep_time'
+    },
+    cookTime: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      field: 'cook_time'
+    },
+    servings: {
+      type: DataTypes.INTEGER,
+      defaultValue: 1
+    },
+    difficulty: {
+      type: DataTypes.ENUM('easy', 'medium', 'hard'),
+      defaultValue: 'medium'
+    },
+    
+    // Display & Media
+    imageUrl: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+      field: 'image_url'
+    },
+    tags: {
+      type: DataTypes.ARRAY(DataTypes.STRING),
+      defaultValue: []
+    },
+    
+    // Status
+    isActive: {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
-      comment: 'Ist das Gericht aktuell verfügbar?'
+      field: 'is_active'
     },
-    serving_size: {
+    sortOrder: {
       type: DataTypes.INTEGER,
-      defaultValue: 1,
-      comment: 'Portionsgröße in Gramm'
+      defaultValue: 0,
+      field: 'sort_order'
     }
   }, {
     tableName: 'products',
     timestamps: true,
     underscored: true,
     indexes: [
-      {
-        fields: ['name']
-      },
-      {
-        fields: ['category']
-      },
-      {
-        fields: ['is_active']
-      }
+      { fields: ['name'] },
+      { fields: ['category_id'] },
+      { fields: ['is_active'] },
+      { fields: ['sort_order'] }
     ]
   });
 
   // Associations
   Product.associate = (models) => {
-    // M:N mit Ingredients über ProductIngredient
+    // Belongs to Category
+    Product.belongsTo(models.Category, {
+      foreignKey: 'categoryId',
+      as: 'category'
+    });
+
+    // Has many ingredients through ProductIngredient
     Product.belongsToMany(models.Ingredient, {
       through: models.ProductIngredient,
-      foreignKey: 'product_id',
+      foreignKey: 'productId',
       as: 'ingredients'
     });
 
-    // 1:N mit Sales
+    // Has many sales
     Product.hasMany(models.Sale, {
-      foreignKey: 'product_id',
+      foreignKey: 'productId',
       as: 'sales'
     });
 
-    // 1:1 mit Nutrition (polymorphic)
+    // Has many forecast items
+    Product.hasMany(models.ForecastItem, {
+      foreignKey: 'productId',
+      as: 'forecastItems'
+    });
+
+    // Has one nutrition (polymorphic)
     Product.hasOne(models.Nutrition, {
-      foreignKey: 'entity_id',
+      foreignKey: 'entityId',
       constraints: false,
       scope: {
-        entity_type: 'product'
+        entityType: 'product'
       },
       as: 'nutrition'
     });
@@ -94,7 +138,7 @@ module.exports = (sequelize) => {
   Product.prototype.getRecipe = async function() {
     const models = require('./index');
     return await models.ProductIngredient.findAll({
-      where: { product_id: this.id },
+      where: { productId: this.id },
       include: [
         {
           model: models.Ingredient,
@@ -107,7 +151,8 @@ module.exports = (sequelize) => {
             }
           ]
         }
-      ]
+      ],
+      order: [['createdAt', 'ASC']]
     });
   };
 
@@ -125,7 +170,7 @@ module.exports = (sequelize) => {
     };
 
     for (const item of recipe) {
-      if (item.ingredient && item.ingredient.nutrition) {
+      if (item.ingredient?.nutrition) {
         const n = item.ingredient.nutrition;
         const factor = parseFloat(item.quantity) / 100; // per 100g
 
@@ -148,7 +193,7 @@ module.exports = (sequelize) => {
     let totalCost = 0;
     for (const item of recipe) {
       if (item.ingredient) {
-        const cost = parseFloat(item.quantity) * parseFloat(item.ingredient.price_per_unit);
+        const cost = parseFloat(item.quantity) * parseFloat(item.ingredient.pricePerUnit);
         totalCost += cost;
       }
     }
@@ -160,7 +205,7 @@ module.exports = (sequelize) => {
     const cost = await this.calculateCost();
     const price = parseFloat(this.price);
     const profit = price - cost;
-    const margin = (profit / price) * 100;
+    const margin = cost > 0 ? (profit / price) * 100 : 0;
     
     return {
       cost: cost.toFixed(2),
@@ -177,13 +222,15 @@ module.exports = (sequelize) => {
     for (const item of recipe) {
       if (item.ingredient) {
         const required = parseFloat(item.quantity) * quantity;
-        const available = parseFloat(item.ingredient.stock_quantity);
+        const available = parseFloat(item.ingredient.stockQuantity);
         const isAvailable = available >= required;
 
         availability.push({
-          ingredient: item.ingredient.name,
+          ingredientId: item.ingredient.id,
+          ingredientName: item.ingredient.name,
           required: required,
           available: available,
+          unit: item.unit,
           isAvailable: isAvailable,
           missing: isAvailable ? 0 : required - available
         });
@@ -193,26 +240,43 @@ module.exports = (sequelize) => {
     return availability;
   };
 
+  Product.prototype.getTotalTime = function() {
+    const prep = this.prepTime || 0;
+    const cook = this.cookTime || 0;
+    return prep + cook;
+  };
+
   // Class Methods
   Product.getActiveProducts = async function() {
     return await Product.findAll({
-      where: { is_active: true },
+      where: { isActive: true },
       include: [
+        {
+          model: sequelize.models.Category,
+          as: 'category'
+        },
         {
           model: sequelize.models.Ingredient,
           as: 'ingredients',
           through: { attributes: ['quantity', 'unit'] }
         }
-      ]
+      ],
+      order: [['sortOrder', 'ASC'], ['name', 'ASC']]
     });
   };
 
-  Product.getByCategory = async function(category) {
+  Product.getByCategory = async function(categoryId) {
     return await Product.findAll({
       where: { 
-        category: category,
-        is_active: true
-      }
+        categoryId: categoryId,
+        isActive: true
+      },
+      include: [
+        {
+          model: sequelize.models.Category,
+          as: 'category'
+        }
+      ]
     });
   };
 

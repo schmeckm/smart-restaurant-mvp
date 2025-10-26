@@ -1,5 +1,14 @@
 // frontend/src/store/modules/ingredients.js
-import { getIngredients, getIngredient, createIngredient, updateIngredient, deleteIngredient, updateStock, getLowStock } from '@/api/ingredients'
+// FIXED to work with new backend API format
+
+import {
+  getIngredients,
+  getIngredient,
+  createIngredient,
+  updateIngredient,
+  deleteIngredient,
+  getLowStockIngredients
+} from '@/api/ingredients';
 
 const state = {
   ingredients: [],
@@ -19,7 +28,7 @@ const getters = {
   loading: state => state.loading,
   pagination: state => state.pagination,
   lowStockIngredients: state => state.ingredients.filter(i => 
-    parseFloat(i.stock_quantity) <= parseFloat(i.min_stock)
+    parseFloat(i.stockQuantity) <= parseFloat(i.minStock)
   )
 }
 
@@ -55,16 +64,16 @@ const actions = {
     commit('SET_LOADING', true)
     try {
       const response = await getIngredients(params)
-      const { data } = response
       
-      commit('SET_INGREDIENTS', data.ingredients || [])
+      // Backend returns: { success: true, data: [...], pagination: {...} }
+      commit('SET_INGREDIENTS', response.data || [])
       
-      if (data.currentPage !== undefined) {
+      if (response.pagination) {
         commit('SET_PAGINATION', {
-          page: data.currentPage,
-          limit: data.limit,
-          total: data.total,
-          totalPages: data.totalPages
+          page: response.pagination.page,
+          limit: response.pagination.limit,
+          total: response.pagination.total,
+          totalPages: response.pagination.pages
         })
       }
       
@@ -131,7 +140,10 @@ const actions = {
 
   async updateStock({ commit }, { id, quantity, operation }) {
     try {
-      const response = await updateStock(id, { quantity, operation })
+      const response = await updateIngredient(id, { 
+        stockQuantity: quantity,
+        operation 
+      })
       
       if (response.data) {
         commit('UPDATE_INGREDIENT', response.data)
@@ -143,9 +155,9 @@ const actions = {
     }
   },
 
-  async fetchLowStock() {
+  async fetchLowStock({ commit }) {
     try {
-      const response = await getLowStock()
+      const response = await getLowStockIngredients()
       return response.data || []
     } catch (error) {
       console.error('Error fetching low stock:', error)

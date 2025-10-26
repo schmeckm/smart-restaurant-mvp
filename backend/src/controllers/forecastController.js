@@ -1,4 +1,5 @@
 // backend/src/controllers/forecastController.js
+// FIXED: Correct Product attributes (categoryId instead of category)
 
 const { ForecastVersion, ForecastItem, Product, User, sequelize } = require('../models');
 
@@ -51,7 +52,7 @@ exports.getForecastVersion = async (req, res) => {
             {
               model: Product,
               as: 'product',
-              attributes: ['id', 'name', 'category']
+              attributes: ['id', 'name', 'categoryId', 'price']  // ✅ FIXED: categoryId instead of category
             }
           ]
         }
@@ -156,7 +157,7 @@ exports.createForecastVersion = async (req, res) => {
             {
               model: Product,
               as: 'product',
-              attributes: ['id', 'name', 'category']
+              attributes: ['id', 'name', 'categoryId', 'price']  // ✅ FIXED
             }
           ]
         }
@@ -253,7 +254,7 @@ exports.updateForecastVersion = async (req, res) => {
             {
               model: Product,
               as: 'product',
-              attributes: ['id', 'name', 'category']
+              attributes: ['id', 'name', 'categoryId', 'price']  // ✅ FIXED
             }
           ]
         }
@@ -376,7 +377,7 @@ exports.cloneForecastVersion = async (req, res) => {
             {
               model: Product,
               as: 'product',
-              attributes: ['id', 'name', 'category']
+              attributes: ['id', 'name', 'categoryId', 'price']  // ✅ FIXED
             }
           ]
         }

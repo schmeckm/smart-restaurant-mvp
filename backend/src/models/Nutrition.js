@@ -1,5 +1,5 @@
-// backend/models/Nutrition.js
-// Separate Nutrition Model für Ingredients und Products
+// backend/src/models/Nutrition.js
+// Fixed Nutrition Model WITHOUT comments to avoid SQL syntax errors
 
 const { DataTypes } = require('sequelize');
 
@@ -12,70 +12,63 @@ module.exports = (sequelize) => {
     },
     
     // Polymorphic Relationship
-    entity_type: {
+    entityType: {
       type: DataTypes.ENUM('ingredient', 'product'),
       allowNull: false,
-      comment: 'Typ der Entity: ingredient oder product'
+      field: 'entity_type'
     },
-    entity_id: {
-      type: DataTypes.INTEGER,
+    entityId: {
+      type: DataTypes.UUID,
       allowNull: false,
-      comment: 'ID des Ingredients oder Products'
+      field: 'entity_id'
     },
     
-    // Basis-Nährstoffe (pro 100g/100ml)
+    // Basic Nutrients (per 100g/100ml)
     calories: {
       type: DataTypes.DECIMAL(8, 2),
-      defaultValue: 0,
-      comment: 'Kalorien (kcal) pro 100g'
+      defaultValue: 0
     },
     protein: {
       type: DataTypes.DECIMAL(8, 2),
-      defaultValue: 0,
-      comment: 'Protein (g) pro 100g'
+      defaultValue: 0
     },
     fat: {
       type: DataTypes.DECIMAL(8, 2),
-      defaultValue: 0,
-      comment: 'Fett (g) pro 100g'
+      defaultValue: 0
     },
     carbs: {
       type: DataTypes.DECIMAL(8, 2),
-      defaultValue: 0,
-      comment: 'Kohlenhydrate (g) pro 100g'
+      defaultValue: 0
     },
     
-    // Erweiterte Nährstoffe
+    // Extended Nutrients
     fiber: {
       type: DataTypes.DECIMAL(8, 2),
-      defaultValue: 0,
-      comment: 'Ballaststoffe (g) pro 100g'
+      defaultValue: 0
     },
     sugar: {
       type: DataTypes.DECIMAL(8, 2),
-      defaultValue: 0,
-      comment: 'Zucker (g) pro 100g'
+      defaultValue: 0
     },
     sodium: {
       type: DataTypes.DECIMAL(8, 2),
-      defaultValue: 0,
-      comment: 'Natrium (mg) pro 100g'
+      defaultValue: 0
     },
     
-    // Vitamine (µg pro 100g)
-    vitamin_a: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0 },
-    vitamin_c: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0 },
-    vitamin_d: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0 },
-    vitamin_e: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0 },
-    vitamin_k: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0 },
-    vitamin_b1: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0 },
-    vitamin_b2: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0 },
-    vitamin_b3: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0 },
-    vitamin_b6: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0 },
-    vitamin_b12: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0 },
+    // Vitamins (µg per 100g)
+    vitaminA: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0, field: 'vitamin_a' },
+    vitaminC: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0, field: 'vitamin_c' },
+    vitaminD: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0, field: 'vitamin_d' },
+    vitaminE: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0, field: 'vitamin_e' },
+    vitaminK: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0, field: 'vitamin_k' },
+    vitaminB1: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0, field: 'vitamin_b1' },
+    vitaminB2: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0, field: 'vitamin_b2' },
+    vitaminB3: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0, field: 'vitamin_b3' },
+    vitaminB6: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0, field: 'vitamin_b6' },
+    vitaminB12: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0, field: 'vitamin_b12' },
     folate: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0 },
     
-    // Mineralien (mg pro 100g)
+    // Minerals (mg per 100g)
     calcium: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0 },
     iron: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0 },
     magnesium: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0 },
@@ -84,53 +77,61 @@ module.exports = (sequelize) => {
     zinc: { type: DataTypes.DECIMAL(8, 2), defaultValue: 0 },
     
     // Dietary Flags
-    is_vegan: {
+    isVegan: {
       type: DataTypes.BOOLEAN,
-      defaultValue: false
+      defaultValue: false,
+      field: 'is_vegan'
     },
-    is_vegetarian: {
+    isVegetarian: {
       type: DataTypes.BOOLEAN,
-      defaultValue: false
+      defaultValue: false,
+      field: 'is_vegetarian'
     },
-    is_gluten_free: {
+    isGlutenFree: {
       type: DataTypes.BOOLEAN,
-      defaultValue: false
+      defaultValue: false,
+      field: 'is_gluten_free'
     },
-    is_lactose_free: {
+    isLactoseFree: {
       type: DataTypes.BOOLEAN,
-      defaultValue: false
+      defaultValue: false,
+      field: 'is_lactose_free'
     },
-    is_organic: {
+    isOrganic: {
       type: DataTypes.BOOLEAN,
-      defaultValue: false
+      defaultValue: false,
+      field: 'is_organic'
     },
     
     // AI/Verification
-    nutrition_source: {
+    nutritionSource: {
       type: DataTypes.ENUM('manual', 'ai', 'usda', 'api', 'verified'),
-      defaultValue: 'manual'
+      defaultValue: 'manual',
+      field: 'nutrition_source'
     },
-    ai_analyzed_at: {
+    aiAnalyzedAt: {
       type: DataTypes.DATE,
-      allowNull: true
+      allowNull: true,
+      field: 'ai_analyzed_at'
     },
-    ai_confidence_score: {
+    aiConfidenceScore: {
       type: DataTypes.DECIMAL(5, 2),
       allowNull: true,
-      comment: 'AI confidence 0-100'
+      field: 'ai_confidence_score'
     },
     verified: {
       type: DataTypes.BOOLEAN,
       defaultValue: false
     },
-    verified_by: {
-      type: DataTypes.INTEGER,
+    verifiedBy: {
+      type: DataTypes.UUID,
       allowNull: true,
-      comment: 'User ID who verified'
+      field: 'verified_by'
     },
-    verified_at: {
+    verifiedAt: {
       type: DataTypes.DATE,
-      allowNull: true
+      allowNull: true,
+      field: 'verified_at'
     }
   }, {
     tableName: 'nutrition',
@@ -153,10 +154,10 @@ module.exports = (sequelize) => {
   // Helper Methods
   Nutrition.prototype.getEntity = async function() {
     const models = require('./index');
-    if (this.entity_type === 'ingredient') {
-      return await models.Ingredient.findByPk(this.entity_id);
-    } else if (this.entity_type === 'product') {
-      return await models.Product.findByPk(this.entity_id);
+    if (this.entityType === 'ingredient') {
+      return await models.Ingredient.findByPk(this.entityId);
+    } else if (this.entityType === 'product') {
+      return await models.Product.findByPk(this.entityId);
     }
     return null;
   };
