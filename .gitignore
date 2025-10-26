@@ -1,3 +1,7 @@
+# ============================================================
+# 🧠 GLOBAL SETTINGS FOR SMART-RESTAURANT-MVP (Backend + Frontend)
+# ============================================================
+
 # Node modules
 node_modules/
 
@@ -5,11 +9,12 @@ node_modules/
 logs/
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Environment files
+# Environment files (never push secrets!)
 .env
-.env.local
-.env.production
+.env.*
 backend/.env
 frontend/.env
 
@@ -17,7 +22,47 @@ frontend/.env
 dist/
 build/
 coverage/
+out/
+tmp/
+temp/
 
-# System files
+# Local History & VSCode
+.vscode/
+.history/
+.idea/
+
+# OS / System files
 .DS_Store
 Thumbs.db
+
+# Dependency directories
+bower_components/
+jspm_packages/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Optional npm cache
+.npm/
+.pnpm-store/
+
+# Local test results
+*.pid
+*.seed
+*.pid.lock
+coverage-final.json
+
+# Editor backups
+*~
+*.swp
+*.bak
+
+# Docker & environment
+docker-compose.override.yml
+*.env.local
+.env.development.local
+.env.production.local
+
+# GitHub workflow logs
+.github/workflows/*.log
+.gith
