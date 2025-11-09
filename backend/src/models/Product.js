@@ -1,7 +1,90 @@
 // backend/src/models/Product.js
-// Fixed Product Model with UUID and Recipe fields
+// MULTI-TENANT SECURE Product Model with UUID and Recipe fields
 
 const { DataTypes } = require('sequelize');
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     Product:
+ *       type: object
+ *       description: Produkt / Gericht eines Restaurants, inklusive Preis, Zutaten und Nährwertinformationen
+ *       required:
+ *         - name
+ *         - restaurantId
+ *         - price
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *           example: "b47c8a5e-9247-41bb-bc25-f3e0f7cb3bfa"
+ *         name:
+ *           type: string
+ *           example: "Spaghetti Bolognese"
+ *         description:
+ *           type: string
+ *           example: "Hausgemachte Pasta mit Rindfleischsauce"
+ *         restaurantId:
+ *           type: string
+ *           format: uuid
+ *           example: "a9b5d6e7-42c8-4c93-b7ad-11b28a4e8821"
+ *           description: Zugehöriges Restaurant (Multi-Tenant)
+ *         categoryId:
+ *           type: string
+ *           format: uuid
+ *           example: "f83a3b9b-9f8e-4b8f-b98a-2381c43eeb45"
+ *           description: Kategorie (z. B. Pasta, Dessert)
+ *         price:
+ *           type: number
+ *           example: 14.50
+ *           description: Verkaufspreis des Produkts
+ *         cost:
+ *           type: number
+ *           example: 5.25
+ *           description: Kalkulierter Material- und Rezeptkostenpreis
+ *         instructions:
+ *           type: string
+ *           example: "Zwiebeln anbraten, Hackfleisch hinzufügen, Sauce 20 Minuten köcheln lassen."
+ *         prepTime:
+ *           type: integer
+ *           example: 15
+ *           description: Vorbereitungszeit in Minuten
+ *         cookTime:
+ *           type: integer
+ *           example: 30
+ *           description: Kochzeit in Minuten
+ *         servings:
+ *           type: integer
+ *           example: 2
+ *           description: Portionen pro Rezept
+ *         difficulty:
+ *           type: string
+ *           enum: [easy, medium, hard]
+ *           example: "medium"
+ *         imageUrl:
+ *           type: string
+ *           example: "https://cdn.example.com/images/spaghetti-bolognese.jpg"
+ *         tags:
+ *           type: array
+ *           items:
+ *             type: string
+ *           example: ["italian", "pasta", "beef"]
+ *         isActive:
+ *           type: boolean
+ *           example: true
+ *         sortOrder:
+ *           type: integer
+ *           example: 10
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *           example: "2025-10-31T10:00:00Z"
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
+ *           example: "2025-10-31T11:30:00Z"
+ */
 
 module.exports = (sequelize) => {
   const Product = sequelize.define('Product', {
@@ -13,14 +96,24 @@ module.exports = (sequelize) => {
     name: {
       type: DataTypes.STRING(255),
       allowNull: false,
-      validate: {
-        notEmpty: true
-      }
+      validate: { notEmpty: true }
     },
     description: {
       type: DataTypes.TEXT,
       allowNull: true
     },
+    // ========== MULTI-TENANT: Restaurant Reference ==========
+    restaurantId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      field: 'restaurant_id',
+      references: {
+        model: 'restaurants',
+        key: 'id'
+      },
+      onDelete: 'CASCADE'
+    },
+    // =========================================================
     categoryId: {
       type: DataTypes.UUID,
       allowNull: true,
@@ -33,12 +126,14 @@ module.exports = (sequelize) => {
     price: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
-      validate: {
-        min: 0
-      }
+      validate: { min: 0 }
     },
-    
-    // Recipe-related fields (no separate Recipe table needed!)
+    cost: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      defaultValue: 0,
+      validate: { min: 0 }
+    },
     instructions: {
       type: DataTypes.TEXT,
       allowNull: true
@@ -61,8 +156,6 @@ module.exports = (sequelize) => {
       type: DataTypes.ENUM('easy', 'medium', 'hard'),
       defaultValue: 'medium'
     },
-    
-    // Display & Media
     imageUrl: {
       type: DataTypes.STRING(500),
       allowNull: true,
@@ -72,8 +165,6 @@ module.exports = (sequelize) => {
       type: DataTypes.ARRAY(DataTypes.STRING),
       defaultValue: []
     },
-    
-    // Status
     isActive: {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
@@ -89,52 +180,67 @@ module.exports = (sequelize) => {
     timestamps: true,
     underscored: true,
     indexes: [
-      { fields: ['name'] },
+      { fields: ['name', 'restaurant_id'], name: 'idx_products_name_restaurant' },
+      { fields: ['restaurant_id'], name: 'idx_products_restaurant_id' },
       { fields: ['category_id'] },
       { fields: ['is_active'] },
       { fields: ['sort_order'] }
     ]
   });
 
-  // Associations
+  // ===============================
+  // 🔗 Associations
+  // ===============================
   Product.associate = (models) => {
-    // Belongs to Category
-    Product.belongsTo(models.Category, {
-      foreignKey: 'categoryId',
-      as: 'category'
-    });
+    if (models.Restaurant) {
+      Product.belongsTo(models.Restaurant, {
+        foreignKey: 'restaurantId',
+        as: 'restaurant'
+      });
+    }
 
-    // Has many ingredients through ProductIngredient
-    Product.belongsToMany(models.Ingredient, {
-      through: models.ProductIngredient,
-      foreignKey: 'productId',
-      as: 'ingredients'
-    });
+    if (models.Category) {
+      Product.belongsTo(models.Category, {
+        foreignKey: 'categoryId',
+        as: 'category'
+      });
+    }
 
-    // Has many sales
-    Product.hasMany(models.Sale, {
-      foreignKey: 'productId',
-      as: 'sales'
-    });
+    if (models.Ingredient && models.ProductIngredient) {
+      Product.belongsToMany(models.Ingredient, {
+        through: models.ProductIngredient,
+        foreignKey: 'productId',
+        as: 'ingredients'
+      });
+    }
 
-    // Has many forecast items
-    Product.hasMany(models.ForecastItem, {
-      foreignKey: 'productId',
-      as: 'forecastItems'
-    });
+    if (models.Sale) {
+      Product.hasMany(models.Sale, {
+        foreignKey: 'productId',
+        as: 'sales'
+      });
+    }
 
-    // Has one nutrition (polymorphic)
-    Product.hasOne(models.Nutrition, {
-      foreignKey: 'entityId',
-      constraints: false,
-      scope: {
-        entityType: 'product'
-      },
-      as: 'nutrition'
-    });
+    if (models.ForecastItem) {
+      Product.hasMany(models.ForecastItem, {
+        foreignKey: 'productId',
+        as: 'forecastItems'
+      });
+    }
+
+    if (models.Nutrition) {
+      Product.hasOne(models.Nutrition, {
+        foreignKey: 'entityId',
+        constraints: false,
+        scope: { entityType: 'product' },
+        as: 'nutrition'
+      });
+    }
   };
 
-  // Instance Methods
+  // ===============================
+  // 🔹 Instance Methods
+  // ===============================
   Product.prototype.getRecipe = async function() {
     const models = require('./index');
     return await models.ProductIngredient.findAll({
@@ -143,13 +249,7 @@ module.exports = (sequelize) => {
         {
           model: models.Ingredient,
           as: 'ingredient',
-          include: [
-            {
-              model: models.Nutrition,
-              as: 'nutrition',
-              required: false
-            }
-          ]
+          include: [{ model: models.Nutrition, as: 'nutrition', required: false }]
         }
       ],
       order: [['createdAt', 'ASC']]
@@ -158,22 +258,12 @@ module.exports = (sequelize) => {
 
   Product.prototype.calculateNutrition = async function() {
     const recipe = await this.getRecipe();
-    
-    const nutrition = {
-      calories: 0,
-      protein: 0,
-      fat: 0,
-      carbs: 0,
-      fiber: 0,
-      sugar: 0,
-      sodium: 0
-    };
+    const nutrition = { calories: 0, protein: 0, fat: 0, carbs: 0, fiber: 0, sugar: 0, sodium: 0 };
 
     for (const item of recipe) {
       if (item.ingredient?.nutrition) {
         const n = item.ingredient.nutrition;
-        const factor = parseFloat(item.quantity) / 100; // per 100g
-
+        const factor = parseFloat(item.quantity) / 100;
         nutrition.calories += parseFloat(n.calories || 0) * factor;
         nutrition.protein += parseFloat(n.protein || 0) * factor;
         nutrition.fat += parseFloat(n.fat || 0) * factor;
@@ -189,7 +279,6 @@ module.exports = (sequelize) => {
 
   Product.prototype.calculateCost = async function() {
     const recipe = await this.getRecipe();
-    
     let totalCost = 0;
     for (const item of recipe) {
       if (item.ingredient) {
@@ -197,7 +286,6 @@ module.exports = (sequelize) => {
         totalCost += cost;
       }
     }
-
     return totalCost;
   };
 
@@ -206,7 +294,7 @@ module.exports = (sequelize) => {
     const price = parseFloat(this.price);
     const profit = price - cost;
     const margin = cost > 0 ? (profit / price) * 100 : 0;
-    
+
     return {
       cost: cost.toFixed(2),
       price: price.toFixed(2),
@@ -228,10 +316,10 @@ module.exports = (sequelize) => {
         availability.push({
           ingredientId: item.ingredient.id,
           ingredientName: item.ingredient.name,
-          required: required,
-          available: available,
+          required,
+          available,
           unit: item.unit,
-          isAvailable: isAvailable,
+          isAvailable,
           missing: isAvailable ? 0 : required - available
         });
       }
@@ -246,37 +334,24 @@ module.exports = (sequelize) => {
     return prep + cook;
   };
 
-  // Class Methods
-  Product.getActiveProducts = async function() {
+  // ===============================
+  // 🔹 Class Methods
+  // ===============================
+  Product.getActiveProducts = async function(restaurantId) {
     return await Product.findAll({
-      where: { isActive: true },
+      where: { isActive: true, restaurantId },
       include: [
-        {
-          model: sequelize.models.Category,
-          as: 'category'
-        },
-        {
-          model: sequelize.models.Ingredient,
-          as: 'ingredients',
-          through: { attributes: ['quantity', 'unit'] }
-        }
+        { model: sequelize.models.Category, as: 'category' },
+        { model: sequelize.models.Ingredient, as: 'ingredients', through: { attributes: ['quantity', 'unit'] } }
       ],
       order: [['sortOrder', 'ASC'], ['name', 'ASC']]
     });
   };
 
-  Product.getByCategory = async function(categoryId) {
+  Product.getByCategory = async function(categoryId, restaurantId) {
     return await Product.findAll({
-      where: { 
-        categoryId: categoryId,
-        isActive: true
-      },
-      include: [
-        {
-          model: sequelize.models.Category,
-          as: 'category'
-        }
-      ]
+      where: { categoryId, restaurantId, isActive: true },
+      include: [{ model: sequelize.models.Category, as: 'category' }]
     });
   };
 

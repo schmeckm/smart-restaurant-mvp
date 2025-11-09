@@ -1,0 +1,34 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "products": "Produkte",
+    "recipes": "Rezepte",
+    "ai_recipe": "KI Rezept-Generator"
+  },
+  "recipe": {
+    "title": "Rezept",
+    "servings": "Portionen",
+    "prepTime": "Vorbereitungszeit",
+    "cookTime": "Kochzeit",
+    "difficulty": {
+      "easy": "Einfach",
+      "medium": "Mittel",
+      "hard": "Schwer"
+    },
+    "ingredients": "Zutaten",
+    "instructions": "Zubereitung",
+    "nutrition": "Nährwerte",
+    "save": "Speichern",
+    "generate": "Generieren"
+  },
+  "units": {
+    "g": "g",
+    "kg": "kg",
+    "ml": "ml",
+    "l": "l",
+    "tsp": "TL",
+    "tbsp": "EL",
+    "cup": "Tasse",
+    "piece": "Stück"
+  }
+}

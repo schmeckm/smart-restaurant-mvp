@@ -1,69 +1,61 @@
+// backend/src/controllers/salesController.js
 const { Sale, Product, User } = require('../models');
 const { Op } = require('sequelize');
 
-// @desc    Get all sales
-// @route   GET /api/v1/sales
-// @access  Private
-exports.getSales = async (req, res) => {
+/**
+ * @swagger
+ * tags:
+ *   name: Sales
+ *   description: Verwaltung von Verkaufsdaten und Umsatzanalysen
+ */
+
+// ============================================================
+// 🔹 GET /api/v1/sales – Alle Verkäufe abrufen (tenant-basiert)
+// ============================================================
+// backend/src/controllers/saleController.js
+
+exports.getAllSales = async (req, res) => {
   try {
-    const { 
-      page = 1, 
-      limit = 10, 
-      startDate, 
-      endDate,
-      productId,
-      userId 
-    } = req.query;
-    
-    const offset = (page - 1) * limit;
-    
-    // Build where clause
-    const where = {};
-    
+    const { startDate, endDate, status } = req.query;
+
+    const where = {
+      restaurantId: req.user.restaurantId
+    };
+
     if (startDate && endDate) {
-      where.sale_date = {
-        [Op.between]: [new Date(startDate), new Date(endDate)]
-      };
-    }
-    
-    if (productId) {
-      where.product_id = productId;
-    }
-    
-    if (userId) {
-      where.user_id = userId;
+      where.sale_date = { [Op.between]: [startDate, endDate] };
     }
 
-    const { count, rows } = await Sale.findAndCountAll({
+    if (status) {
+      where.status = status;
+    }
+
+    const sales = await Sale.findAll({
       where,
-      limit: parseInt(limit),
-      offset: parseInt(offset),
       include: [
-        {
-          model: Product,
-          as: 'product',
-          attributes: ['id', 'name', 'price']
-        },
+        { model: Product, as: 'product', attributes: ['id', 'name', 'price'] },
         {
           model: User,
           as: 'user',
-          attributes: ['id', 'name', 'email']
+          attributes: ['id', 'name', 'email'] // ✅ fix: kein first_name/last_name
         }
       ],
       order: [['sale_date', 'DESC']]
     });
 
+    const safeSales = sales.map(s => ({
+      ...s.toJSON(),
+      status: s.status || 'pending',
+      total_price: s.total_price || (s.quantity * s.unit_price)
+    }));
+
     res.json({
       success: true,
-      data: {
-        sales: rows,
-        total: count,
-        page: parseInt(page),
-        limit: parseInt(limit)
-      }
+      count: safeSales.length,
+      data: safeSales
     });
   } catch (error) {
-    console.error('Get sales error:', error);
+    console.error('❌ [getAllSales] Fehler:', error);
     res.status(500).json({
       success: false,
       message: 'Fehler beim Laden der Verkäufe',
@@ -72,18 +64,24 @@ exports.getSales = async (req, res) => {
   }
 };
 
-// @desc    Get single sale
-// @route   GET /api/v1/sales/:id
-// @access  Private
+
+// ============================================================
+// 🔹 GET /api/v1/sales/:id – Einzelnen Verkauf abrufen
+// ============================================================
 exports.getSale = async (req, res) => {
   try {
-    const sale = await Sale.findByPk(req.params.id, {
+    const sale = await Sale.findOne({
+      where: { id: req.params.id, restaurantId: req.user.restaurantId },
       include: [
-        { model: Product, as: 'product' },
-        { model: User, as: 'user', attributes: ['id', 'name', 'email'] }
+        { model: Product, as: 'product', attributes: ['id', 'name', 'price'] },
+        {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'firstName', 'lastName', 'email']
+        }
       ]
     });
-    
+
     if (!sale) {
       return res.status(404).json({
         success: false,
@@ -91,82 +89,77 @@ exports.getSale = async (req, res) => {
       });
     }
 
-    res.json({
-      success: true,
-      data: sale
-    });
+    res.json({ success: true, data: sale });
   } catch (error) {
-    console.error('Get sale error:', error);
+    console.error('❌ [getSale] Fehler:', error);
     res.status(500).json({
       success: false,
-      message: 'Fehler beim Laden des Verkaufs'
-    });
-  }
-};
-
-// @desc    Create sale
-// @route   POST /api/v1/sales
-// @access  Private
-exports.createSale = async (req, res) => {
-  try {
-    const { product_id, quantity, sale_date, payment_method } = req.body;
-
-    // Get product to calculate prices
-    const product = await Product.findByPk(product_id);
-    
-    if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: 'Produkt nicht gefunden'
-      });
-    }
-
-    // Calculate prices
-    const unit_price = product.price;
-    const total_price = unit_price * quantity;
-
-    const saleData = {
-      product_id,
-      user_id: req.user.id,
-      quantity,
-      unit_price,
-      total_price,
-      payment_method: payment_method || 'cash',
-      sale_date: sale_date || new Date()
-    };
-
-    const sale = await Sale.create(saleData);
-
-    // Fetch complete sale with relations
-    const completeSale = await Sale.findByPk(sale.id, {
-      include: [
-        { model: Product, as: 'product', attributes: ['id', 'name', 'price'] },
-        { model: User, as: 'user', attributes: ['id', 'name', 'email'] }
-      ]
-    });
-
-    res.status(201).json({
-      success: true,
-      message: 'Verkauf erfolgreich erstellt',
-      data: completeSale
-    });
-  } catch (error) {
-    console.error('Create sale error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Fehler beim Erstellen des Verkaufs',
+      message: 'Fehler beim Laden des Verkaufs',
       error: error.message
     });
   }
 };
 
-// @desc    Update sale
-// @route   PUT /api/v1/sales/:id
-// @access  Private (admin, manager)
+// ============================================================
+// 🔹 POST /api/v1/sales – Neuen Verkauf erfassen
+// ============================================================
+exports.createSale = async (req, res) => {
+  try {
+    const { product_id, quantity, payment_method, unit_price } = req.body;
+
+    if (!product_id || !quantity) {
+      return res.status(400).json({
+        success: false,
+        message: 'Produkt und Menge sind erforderlich'
+      });
+    }
+
+    const product = await Product.findOne({
+      where: { id: product_id, restaurantId: req.user.restaurantId }
+    });
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Produkt nicht gefunden oder gehört zu anderem Restaurant'
+      });
+    }
+
+    const sale = await Sale.create({
+      productId: product.id,
+      restaurantId: req.user.restaurantId,
+      userId: req.user.id,
+      quantity,
+      payment_method: payment_method || 'cash',
+      unitPrice: unit_price || product.price || 0,
+      totalPrice: (unit_price || product.price || 0) * quantity,
+      status: req.body.status || 'pending',
+      saleDate: new Date()
+    });
+
+    res.status(201).json({
+      success: true,
+      data: sale
+    });
+  } catch (error) {
+    console.error('❌ [createSale] Fehler:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Fehler beim Erfassen des Verkaufs',
+      error: error.message
+    });
+  }
+};
+
+// ============================================================
+// 🔹 PUT /api/v1/sales/:id – Verkauf aktualisieren
+// ============================================================
 exports.updateSale = async (req, res) => {
   try {
-    const sale = await Sale.findByPk(req.params.id);
-    
+    const sale = await Sale.findOne({
+      where: { id: req.params.id, restaurantId: req.user.restaurantId }
+    });
+
     if (!sale) {
       return res.status(404).json({
         success: false,
@@ -174,44 +167,14 @@ exports.updateSale = async (req, res) => {
       });
     }
 
-    const { product_id, quantity, payment_method, status, sale_date } = req.body;
-
-    // If product or quantity changed, recalculate prices
-    if (product_id || quantity) {
-      const productIdToUse = product_id || sale.product_id;
-      const quantityToUse = quantity || sale.quantity;
-      
-      const product = await Product.findByPk(productIdToUse);
-      if (product) {
-        sale.unit_price = product.price;
-        sale.total_price = product.price * quantityToUse;
-      }
-    }
-
-    // Update fields
-    if (product_id) sale.product_id = product_id;
-    if (quantity) sale.quantity = quantity;
-    if (payment_method) sale.payment_method = payment_method;
-    if (status) sale.status = status;
-    if (sale_date) sale.sale_date = sale_date;
-
-    await sale.save();
-
-    // Fetch updated sale with relations
-    const updatedSale = await Sale.findByPk(sale.id, {
-      include: [
-        { model: Product, as: 'product', attributes: ['id', 'name', 'price'] },
-        { model: User, as: 'user', attributes: ['id', 'name', 'email'] }
-      ]
+    await sale.update({
+      ...req.body,
+      status: req.body.status || sale.status || 'pending'
     });
 
-    res.json({
-      success: true,
-      message: 'Verkauf aktualisiert',
-      data: updatedSale
-    });
+    res.json({ success: true, data: sale });
   } catch (error) {
-    console.error('Update sale error:', error);
+    console.error('❌ [updateSale] Fehler:', error);
     res.status(500).json({
       success: false,
       message: 'Fehler beim Aktualisieren des Verkaufs',
@@ -220,13 +183,15 @@ exports.updateSale = async (req, res) => {
   }
 };
 
-// @desc    Delete sale
-// @route   DELETE /api/v1/sales/:id
-// @access  Private (admin)
+// ============================================================
+// 🔹 DELETE /api/v1/sales/:id – Verkauf löschen
+// ============================================================
 exports.deleteSale = async (req, res) => {
   try {
-    const sale = await Sale.findByPk(req.params.id);
-    
+    const sale = await Sale.findOne({
+      where: { id: req.params.id, restaurantId: req.user.restaurantId }
+    });
+
     if (!sale) {
       return res.status(404).json({
         success: false,
@@ -241,7 +206,7 @@ exports.deleteSale = async (req, res) => {
       message: 'Verkauf gelöscht'
     });
   } catch (error) {
-    console.error('Delete sale error:', error);
+    console.error('❌ [deleteSale] Fehler:', error);
     res.status(500).json({
       success: false,
       message: 'Fehler beim Löschen des Verkaufs',
@@ -250,120 +215,136 @@ exports.deleteSale = async (req, res) => {
   }
 };
 
-// @desc    Get sales analytics
-// @route   GET /api/v1/sales/analytics
-// @access  Private (admin, manager)
+// ============================================================
+// 🔹 GET /api/v1/sales/analytics – Umsatzanalyse
+// ============================================================
+/**
+ * @swagger
+ * /api/v1/sales/analytics:
+ *   get:
+ *     summary: Umsatzanalyse abrufen
+ *     description: Aggregierte Statistiken über alle Verkäufe (z. B. Gesamtumsatz, durchschnittlicher Bestellwert)
+ *     tags: [Sales]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Erfolgreich – Analytics-Daten zurückgegeben
+ */
 exports.getSalesAnalytics = async (req, res) => {
   try {
+    const restaurantId = req.user.restaurantId;
     const { startDate, endDate } = req.query;
-    
-    const where = {};
+
+    const where = { restaurantId };
     if (startDate && endDate) {
-      where.sale_date = {
-        [Op.between]: [new Date(startDate), new Date(endDate)]
-      };
+      where.saleDate = { [Op.between]: [startDate, endDate] };
     }
 
-    const totalSales = await Sale.sum('total_price', { where });
-    const salesCount = await Sale.count({ where });
-    
+    const totalRevenue = await Sale.sum('totalPrice', { where });
+    const totalSales = await Sale.count({ where });
+    const avgOrderValue = totalSales > 0 ? totalRevenue / totalSales : 0;
+
     res.json({
       success: true,
-      data: {
-        totalSales: totalSales || 0,
-        salesCount: salesCount || 0,
-        averageSale: salesCount > 0 ? (totalSales / salesCount).toFixed(2) : 0
-      }
+      data: { totalRevenue, totalSales, avgOrderValue }
     });
   } catch (error) {
-    console.error('Get analytics error:', error);
+    console.error('❌ [getSalesAnalytics] Fehler:', error);
     res.status(500).json({
       success: false,
-      message: 'Fehler beim Laden der Analytics'
+      message: 'Fehler beim Abrufen der Analytics',
+      error: error.message
     });
   }
 };
 
-// @desc    Get top selling products
-// @route   GET /api/v1/sales/top-products
-// @access  Private (admin, manager)
+// ============================================================
+// 🔹 GET /api/v1/sales/top-products – Meistverkaufte Produkte
+// ============================================================
+/**
+ * @swagger
+ * /api/v1/sales/top-products:
+ *   get:
+ *     summary: Top-Produkte nach Umsatz oder Absatz
+ *     tags: [Sales]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Erfolgreich – Liste der Top-Produkte
+ */
 exports.getTopProducts = async (req, res) => {
   try {
-    const { limit = 10, startDate, endDate } = req.query;
-    
-    const where = {};
-    if (startDate && endDate) {
-      where.sale_date = {
-        [Op.between]: [new Date(startDate), new Date(endDate)]
-      };
-    }
+    const restaurantId = req.user.restaurantId;
 
-    const topProducts = await Sale.findAll({
-      where,
+    const results = await Sale.findAll({
+      where: { restaurantId },
       attributes: [
-        'product_id',
+        'productId',
         [Sale.sequelize.fn('SUM', Sale.sequelize.col('quantity')), 'totalQuantity'],
         [Sale.sequelize.fn('SUM', Sale.sequelize.col('total_price')), 'totalRevenue']
       ],
       include: [
         {
-          model: Product,
+          model: Sale.sequelize.models.Product,
           as: 'product',
-          attributes: ['id', 'name', 'price']
+          attributes: ['name', 'price']
         }
       ],
-      group: ['product_id', 'product.id', 'product.name', 'product.price'],
-      order: [[Sale.sequelize.fn('SUM', Sale.sequelize.col('quantity')), 'DESC']],
-      limit: parseInt(limit)
+      group: ['productId', 'product.id'],
+      order: [[Sale.sequelize.literal('totalRevenue'), 'DESC']],
+      limit: 10
     });
 
-    res.json({
-      success: true,
-      data: topProducts
-    });
+    res.json({ success: true, count: results.length, data: results });
   } catch (error) {
-    console.error('Get top products error:', error);
+    console.error('❌ [getTopProducts] Fehler:', error);
     res.status(500).json({
       success: false,
-      message: 'Fehler beim Laden der Top-Produkte'
+      message: 'Fehler beim Abrufen der Top-Produkte',
+      error: error.message
     });
   }
 };
 
-// @desc    Get daily sales
-// @route   GET /api/v1/sales/daily
-// @access  Private (admin, manager)
+// ============================================================
+// 🔹 GET /api/v1/sales/daily – Tagesumsätze
+// ============================================================
+/**
+ * @swagger
+ * /api/v1/sales/daily:
+ *   get:
+ *     summary: Tägliche Umsatzübersicht
+ *     description: Gibt den täglichen Umsatzverlauf für das aktuelle Restaurant zurück.
+ *     tags: [Sales]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Erfolgreich – Tagesumsätze zurückgegeben
+ */
 exports.getDailySales = async (req, res) => {
   try {
-    const { startDate, endDate } = req.query;
-    
-    const where = {};
-    if (startDate && endDate) {
-      where.sale_date = {
-        [Op.between]: [new Date(startDate), new Date(endDate)]
-      };
-    }
+    const restaurantId = req.user.restaurantId;
 
-    const dailySales = await Sale.findAll({
-      where,
+    const results = await Sale.findAll({
+      where: { restaurantId },
       attributes: [
         [Sale.sequelize.fn('DATE', Sale.sequelize.col('sale_date')), 'date'],
-        [Sale.sequelize.fn('COUNT', Sale.sequelize.col('id')), 'count'],
-        [Sale.sequelize.fn('SUM', Sale.sequelize.col('total_price')), 'total']
+        [Sale.sequelize.fn('SUM', Sale.sequelize.col('total_price')), 'dailyRevenue']
       ],
-      group: [Sale.sequelize.fn('DATE', Sale.sequelize.col('sale_date'))],
-      order: [[Sale.sequelize.fn('DATE', Sale.sequelize.col('sale_date')), 'ASC']]
+      group: ['date'],
+      order: [[Sale.sequelize.literal('date'), 'ASC']]
     });
 
-    res.json({
-      success: true,
-      data: dailySales
-    });
+    res.json({ success: true, data: results });
   } catch (error) {
-    console.error('Get daily sales error:', error);
+    console.error('❌ [getDailySales] Fehler:', error);
     res.status(500).json({
       success: false,
-      message: 'Fehler beim Laden der täglichen Verkäufe'
+      message: 'Fehler beim Abrufen der Tagesumsätze',
+      error: error.message
     });
   }
 };

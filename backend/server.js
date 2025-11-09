@@ -1,9 +1,8 @@
 // ============================================
-// backend/server.js - OPTIMIZED VERSION
+// backend/server.js - FINAL VERSION (lokal + iotshowroom.de)
 // ============================================
-require('dotenv').config();
 
-// 🔧 FIX: MaxListenersExceededWarning
+require('dotenv').config();
 require('events').EventEmitter.defaultMaxListeners = 20;
 
 const express = require('express');
@@ -11,6 +10,8 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const morgan = require('morgan');
+const swaggerUi = require('swagger-ui-express');
+const swaggerJsdoc = require('swagger-jsdoc');
 
 const db = require('./src/config/database');
 const logger = require('./src/utils/logger');
@@ -20,53 +21,106 @@ const routes = require('./src/routes');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Security & Middleware
+// ============================================
+// 🛡️ Security & Middleware
+// ============================================
+
+// 💡 Erlaubte Frontend-Quellen
+const allowedOrigins = [
+  'http://localhost:8080',       // Vue Dev Server
+  'http://localhost:5173',       // (optional) Vite Dev Server
+  'https://iotshowroom.de',      // Produktionsfrontend
+  'https://www.iotshowroom.de'   // Subdomain
+];
+
 app.use(helmet());
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:8080',
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin) || origin.startsWith('http://localhost')) {
+        callback(null, true);
+      } else {
+        console.warn('🚫 CORS blocked:', origin);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true
+  })
+);
 
-// 🔧 Disable ETag caching (verhindert 304 Responses)
-app.set('etag', false);
-
+app.disable('etag');
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(compression());
 
-// Logging
+// ============================================
+// 🪵 Logging
+// ============================================
 if (process.env.NODE_ENV !== 'test') {
   app.use(morgan('combined', { stream: logger.stream }));
 }
 
-// 🔍 DEBUG MIDDLEWARE - Nur wenn DEBUG_MODE=true
-if (process.env.DEBUG_MODE === 'true') {
-  app.use((req, res, next) => {
-    console.log('\n🔍 ========== REQUEST DEBUG ==========');
-    console.log('📍 Method:', req.method);
-    console.log('📍 URL:', req.url);
-    console.log('📍 Authorization:', req.headers.authorization ? '✅ Present' : '❌ Missing');
-    console.log('📍 Headers:', JSON.stringify(req.headers, null, 2));
-    console.log('🔍 ===================================\n');
-    next();
-  });
-}
-
-// Health Check
+// ============================================
+// 🩺 Health Check + Testroute
+// ============================================
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'OK',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV,
-    database: db.connectionManager.pool ? 'connected' : 'disconnected'
+    database: db.connectionManager?.pool ? 'connected' : 'disconnected'
   });
 });
 
-// API Routes
+// 🔍 Testroute für API-Verbindung
+app.get('/api/v1/ping', (req, res) => {
+  res.status(200).json({
+    message: 'pong 🏓',
+    frontend: process.env.FRONTEND_URL || 'not set',
+    api_url: `http://localhost:${PORT}/api/v1`,
+    time: new Date().toISOString()
+  });
+});
+
+// ============================================
+// 📘 Swagger Setup
+// ============================================
+const swaggerOptions = {
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'Smart Restaurant API',
+      version: '1.0.0',
+      description: 'API Dokumentation für das Smart Restaurant Backend'
+    },
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          description: 'JWT Token eingeben (ohne "Bearer")'
+        }
+      }
+    },
+    security: [{ bearerAuth: [] }]
+  },
+  apis: ['./src/routes/*.js', './src/models/*.js']
+};
+
+const swaggerDocs = swaggerJsdoc(swaggerOptions);
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
+console.log(`📚 Swagger UI verfügbar unter: http://localhost:${PORT}/api-docs`);
+
+// ============================================
+// 📦 API Routes
+// ============================================
 app.use('/api/v1', routes);
 
-// 404 Handler
+// ============================================
+// ⚠️ 404 Handler
+// ============================================
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -74,77 +128,63 @@ app.use((req, res) => {
   });
 });
 
-// Error Handler
+// ============================================
+// ❌ Error Handler
+// ============================================
 app.use(errorHandler);
 
-// Start Server
-let server; // 🔧 Server-Referenz für Graceful Shutdown
+// ============================================
+// 🚀 Server Start
+// ============================================
+let server;
 
 const startServer = async () => {
   try {
-    // Database Connection
     await db.authenticate();
     logger.info('✅ Database connected');
-    
-    // Sync Database (nur in Development)
+
     if (process.env.NODE_ENV === 'development') {
       await db.sync({ alter: true });
       logger.info('✅ Database synced');
     }
 
-    // Start HTTP Server
     server = app.listen(PORT, () => {
       logger.info(`🚀 Server running on port ${PORT}`);
       logger.info(`📦 Environment: ${process.env.NODE_ENV || 'development'}`);
-      
-      if (process.env.DEBUG_MODE === 'true') {
-        console.log('\n🔍 DEBUG MODE ACTIVE - Showing all request headers\n');
-      }
-      
-      console.log('\n✅ Server ready to accept connections\n');
+      console.log(`✅ API Docs: http://localhost:${PORT}/api-docs\n`);
     });
 
-    // Server Error Handler
     server.on('error', (error) => {
       if (error.code === 'EADDRINUSE') {
-        logger.error(`❌ Port ${PORT} is already in use`);
+        logger.error(`❌ Port ${PORT} already in use`);
       } else {
         logger.error('❌ Server error:', error);
       }
       process.exit(1);
     });
-
   } catch (error) {
     logger.error('❌ Server start failed:', error);
     process.exit(1);
   }
 };
 
-// 🔧 Graceful Shutdown Handler
+// ============================================
+// 🧹 Graceful Shutdown
+// ============================================
 const gracefulShutdown = async (signal) => {
-  logger.info(`\n${signal} received - Starting graceful shutdown...`);
-  
+  logger.info(`\n${signal} received - graceful shutdown...`);
   try {
-    // Stop accepting new connections
     if (server) {
       await new Promise((resolve, reject) => {
         server.close((err) => {
-          if (err) {
-            logger.error('Error closing server:', err);
-            reject(err);
-          } else {
-            logger.info('✅ HTTP server closed');
-            resolve();
-          }
+          if (err) reject(err);
+          else resolve();
         });
       });
     }
 
-    // Close database connection
     await db.close();
     logger.info('✅ Database connection closed');
-    
-    logger.info('✅ Graceful shutdown complete');
     process.exit(0);
   } catch (error) {
     logger.error('❌ Error during shutdown:', error);
@@ -152,26 +192,19 @@ const gracefulShutdown = async (signal) => {
   }
 };
 
-// 🔧 Process Signal Handlers
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));  // Ctrl+C
-
-// 🔧 Unhandled Rejection Handler
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  // Optional: Shutdown bei kritischen Errors
-  if (process.env.EXIT_ON_UNHANDLED_REJECTION === 'true') {
-    gracefulShutdown('UNHANDLED_REJECTION');
-  }
 });
-
-// 🔧 Uncaught Exception Handler
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught Exception:', error);
   gracefulShutdown('UNCAUGHT_EXCEPTION');
 });
 
-// Start the server
+// ============================================
+// 🚀 Start
+// ============================================
 startServer();
 
 module.exports = app;

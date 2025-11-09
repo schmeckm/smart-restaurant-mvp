@@ -1,4 +1,7 @@
-import { login, logout, getInfo } from '@/api/user'
+// =====================================
+// ✅ Vuex Modul: user.js (final funktionierend)
+// =====================================
+import { login, logout, getProfile, updateUserProfile, changePassword } from '@/api/user'
 import { getToken, setToken, removeToken } from '@/utils/auth'
 import router, { resetRouter } from '@/router'
 
@@ -12,159 +15,108 @@ const state = {
 }
 
 const mutations = {
-  SET_TOKEN: (state, token) => {
+  SET_TOKEN(state, token) {
     state.token = token
   },
-  SET_NAME: (state, name) => {
+  SET_USER(state, user) {
+    state.user = user
+  },
+  SET_NAME(state, name) {
     state.name = name
   },
-  SET_EMAIL: (state, email) => {
+  SET_EMAIL(state, email) {
     state.email = email
   },
-  SET_AVATAR: (state, avatar) => {
+  SET_AVATAR(state, avatar) {
     state.avatar = avatar
   },
-  SET_ROLES: (state, roles) => {
+  SET_ROLES(state, roles) {
     state.roles = roles
   },
-  SET_USER: (state, user) => {
-    state.user = user
+  CLEAR_USER_DATA(state) {
+    state.token = ''
+    state.user = null
+    state.roles = []
+    removeToken()
   }
 }
 
 const actions = {
-  // User login
-  login({ commit }, userInfo) {
+  // 🔐 LOGIN
+  async login({ commit, dispatch }, userInfo) {
     const { email, password } = userInfo
-    return new Promise((resolve, reject) => {
-      login({ email: email.trim(), password: password })
-        .then(response => {
-          console.log('🔍 Full Response:', response)
-          
-          const { data } = response
-          
-          // Backend sendet: { success: true, data: { token, user } }
-          const token = data.data?.token || data.token
-          const user = data.data?.user || data.user
-          
-          console.log('🔍 Token:', token)
-          console.log('🔍 User:', user)
-          
-          if (!token) {
-            reject('No token received')
-            return
-          }
-          
-          commit('SET_TOKEN', token)
-          setToken(token)
-          resolve()
-        })
-        .catch(error => {
-          console.error('❌ Login error:', error)
-          reject(error)
-        })
-    })
-  },
-
-  // Google OAuth login
-  googleLogin({ commit }, token) {
-    return new Promise((resolve, reject) => {
-      commit('SET_TOKEN', token)
-      setToken(token)
-      resolve()
-    })
-  },
-
-  // Get user info
-  getInfo({ commit, state }) {
-    return new Promise((resolve, reject) => {
-      getInfo(state.token)
-        .then(response => {
-          console.log('🔍 GetInfo Response:', response)
-          
-          const { data } = response
-          
-          // Backend sendet: { success: true, data: { user } }
-          const userData = data.data || data
-          
-          console.log('🔍 User Data:', userData)
-
-          if (!userData) {
-            reject('Verification failed, please Login again.')
-            return
-          }
-
-          const { name, email, avatar, role } = userData
-          
-          // Verwende role statt roles (Backend sendet role als String)
-          const roles = role ? [role] : ['staff']
-
-          commit('SET_ROLES', roles)
-          commit('SET_NAME', name)
-          commit('SET_EMAIL', email)
-          commit('SET_AVATAR', avatar || 'https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png')
-          commit('SET_USER', userData)
-          resolve(userData)
-        })
-        .catch(error => {
-          console.error('❌ GetInfo error:', error)
-          reject(error)
-        })
-    })
-  },
-
-  // User logout
-  logout({ commit, state, dispatch }) {
-    return new Promise((resolve, reject) => {
-      logout(state.token)
-        .then(() => {
-          commit('SET_TOKEN', '')
-          commit('SET_ROLES', [])
-          commit('SET_USER', null)
-          removeToken()
-          resetRouter()
-
-          // reset visited views and cached views
-          // dispatch('tagsView/delAllViews', null, { root: true })
-
-          resolve()
-        })
-        .catch(error => {
-          reject(error)
-        })
-    })
-  },
-
-  // Remove token
-  resetToken({ commit }) {
-    return new Promise(resolve => {
-      commit('SET_TOKEN', '')
-      commit('SET_ROLES', [])
-      commit('SET_USER', null)
-      removeToken()
-      resolve()
-    })
-  },
-
-  // Dynamically modify permissions
-  async changeRoles({ commit, dispatch }, role) {
-    const token = role + '-token'
+    const response = await login({ email: email.trim(), password })
+    const token = response.data?.token || response.data?.data?.token
+    if (!token) throw new Error('Kein Token vom Server erhalten')
 
     commit('SET_TOKEN', token)
     setToken(token)
 
-    const { roles } = await dispatch('getInfo')
+    const user = await dispatch('getInfo')
+    commit('SET_USER', user)
+    return user
+  },
 
-    resetRouter()
+  // 👤 Benutzerinformationen abrufen
+  async getInfo({ commit }) {
+    const response = await getProfile()
+    const data = response.data?.data || response.data
+    if (!data) throw new Error('Benutzerdaten nicht gefunden')
 
-    // generate accessible routes map based on roles
-    const accessRoutes = await dispatch('permission/generateRoutes', roles, { root: true })
-    // dynamically add accessible routes
-    router.addRoute(accessRoutes)
+    const { name, email, avatar, role, restaurant, uiLanguage } = data
+    const roles = role ? [role] : ['employee']
 
-    // reset visited views and cached views
-    dispatch('tagsView/delAllViews', null, { root: true })
+    commit('SET_NAME', name)
+    commit('SET_EMAIL', email)
+    commit('SET_AVATAR', avatar || 'https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png')
+    commit('SET_ROLES', roles)
+    commit('SET_USER', data)
+
+    return data
+  },
+
+  // ✏️ Profil aktualisieren
+  async updateProfile({ commit }, profileData) {
+    const response = await updateUserProfile(profileData)
+    const updated = response.data?.data || response.data
+    commit('SET_USER', updated)
+    commit('SET_NAME', updated.name)
+    commit('SET_EMAIL', updated.email)
+    return updated
+  },
+
+  // 🔐 Passwort ändern
+  async changePassword({ }, { currentPassword, newPassword }) {
+    const response = await changePassword({ currentPassword, newPassword })
+    return response
+  },
+
+  // 🚪 LOGOUT
+  async logout({ commit }) {
+    try {
+      await logout()
+    } catch (e) {
+      console.warn('Logout fehlgeschlagen, Session wird trotzdem beendet')
+    } finally {
+      commit('CLEAR_USER_DATA')
+      resetRouter()
+    }
+  },
+
+  // ❌ Token zurücksetzen
+  resetToken({ commit }) {
+    commit('CLEAR_USER_DATA')
   }
+}
+
+const getters = {
+  token: state => state.token,
+  isAuthenticated: state => !!state.token,
+  user: state => state.user,
+  roles: state => state.roles,
+  name: state => state.name,
+  email: state => state.email,
+  avatar: state => state.avatar
 }
 
 export default {
@@ -172,13 +124,5 @@ export default {
   state,
   mutations,
   actions,
-  getters: {
-    isAuthenticated: (state) => !!state.token,
-    user: (state) => state.user || {
-      name: state.name,
-      email: state.email,
-      avatar: state.avatar,
-      roles: state.roles
-    }
-  }
+  getters
 }

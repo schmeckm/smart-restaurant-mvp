@@ -1,7 +1,7 @@
 import request from '@/utils/request'
 
 /**
- * User login
+ * 🟢 Login (E-Mail & Passwort)
  */
 export function login(data) {
   return request({
@@ -12,7 +12,7 @@ export function login(data) {
 }
 
 /**
- * Google OAuth login
+ * 🟢 Google OAuth Login
  */
 export function googleLogin(data) {
   return request({
@@ -23,9 +23,9 @@ export function googleLogin(data) {
 }
 
 /**
- * Get user info
+ * 👤 Aktuelles Benutzerprofil abrufen
  */
-export function getInfo(token) {
+export function getProfile() {
   return request({
     url: '/auth/me',
     method: 'get'
@@ -33,7 +33,29 @@ export function getInfo(token) {
 }
 
 /**
- * User logout
+ * ✏️ Benutzerprofil aktualisieren
+ */
+export function updateUserProfile(data) {
+  return request({
+    url: '/auth/profile',
+    method: 'put',
+    data
+  })
+}
+
+/**
+ * 🔐 Passwort ändern
+ */
+export function changePassword(data) {
+  return request({
+    url: '/auth/change-password',
+    method: 'post',
+    data
+  })
+}
+
+/**
+ * 🚪 Benutzer-Logout
  */
 export function logout() {
   return request({

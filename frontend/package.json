@@ -13,15 +13,21 @@
     "chart.js": "^4.5.0",
     "dayjs": "^1.11.18",
     "element-plus": "^2.11.5",
+    "file-saver": "^2.0.5",
     "js-cookie": "^3.0.5",
+    "jspdf": "^3.0.3",
+    "jspdf-autotable": "^5.0.2",
+    "pinia": "^3.0.4",
     "vue": "^3.3.4",
     "vue-chartjs": "^5.3.2",
+    "vue-i18n": "^9.14.5",
     "vue-router": "^4.2.5",
-    "vuex": "^4.1.0"
+    "vuex": "^4.1.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@vue/cli-plugin-babel": "^5.0.9",
-    "@vue/cli-plugin-eslint": "^5.0.9",
+    "@vue/cli-plugin-eslint": "^3.12.1",
     "@vue/cli-plugin-router": "^5.0.9",
     "@vue/cli-plugin-vuex": "^5.0.9",
     "@vue/cli-service": "^5.0.9",

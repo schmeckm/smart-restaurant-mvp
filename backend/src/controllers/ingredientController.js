@@ -1,240 +1,335 @@
 // backend/src/controllers/ingredientController.js
-// Fixed Ingredient Controller with proper pagination
-
-const { Ingredient, sequelize } = require('../models');
+const { Ingredient, Product, ProductIngredient, Nutrition } = require('../models');
 const { Op } = require('sequelize');
 
 /**
- * Get all ingredients with pagination
+ * ========================================
+ * 🧩 GET ALL INGREDIENTS (ohne Nutrition)
+ * ========================================
+ * GET /api/v1/ingredients
+ * Private
  */
 exports.getAllIngredients = async (req, res) => {
   try {
-    const { 
-      page = 1, 
-      limit = 20, 
-      search, 
-      isActive,
-      lowStock 
-    } = req.query;
-    
-    const offset = (page - 1) * limit;
-    
-    const where = {};
-    
-    // Search filter
-    if (search) {
-      where.name = { [Op.iLike]: `%${search}%` };
-    }
-    
-    // Active filter
-    if (isActive !== undefined) {
-      where.isActive = isActive === 'true';
-    }
-    
-    // Low stock filter
-    if (lowStock === 'true') {
-      // Ingredients where stock is below minimum
-      where[Op.and] = sequelize.literal('"stock_quantity" <= "min_stock"');
-    }
-    
-    const { count, rows } = await Ingredient.findAndCountAll({
-      where,
-      limit: parseInt(limit),
-      offset: parseInt(offset),
+    const ingredients = await Ingredient.findAll({
+      where: {
+        restaurantId: req.user.restaurantId,
+        isActive: true
+      },
       order: [['name', 'ASC']]
     });
-    
+
     res.json({
       success: true,
-      data: rows,
-      pagination: {
-        total: count,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        pages: Math.ceil(count / limit)
-      }
+      count: ingredients.length,
+      data: ingredients
     });
   } catch (error) {
-    console.error('❌ Error fetching ingredients:', error);
+    console.error('❌ Get all ingredients error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching ingredients',
-      error: error.message
+      message: 'Fehler beim Laden der Zutaten'
     });
   }
 };
 
 /**
- * Get single ingredient
+ * ========================================
+ * 🧬 GET INGREDIENT NUTRITION (Lazy Load)
+ * ========================================
+ * GET /api/v1/ingredients/:id/nutrition
+ * Private
  */
-exports.getIngredient = async (req, res) => {
+exports.getIngredientNutrition = async (req, res) => {
   try {
-    const { id } = req.params;
-    
-    const ingredient = await Ingredient.findByPk(id);
-    
+    const ingredient = await Ingredient.findOne({
+      where: {
+        id: req.params.id,
+        restaurantId: req.user.restaurantId
+      }
+    });
+
     if (!ingredient) {
       return res.status(404).json({
         success: false,
-        message: 'Ingredient not found'
+        message: 'Zutat nicht gefunden'
       });
     }
-    
+
+    const nutrition = await Nutrition.findOne({
+      where: {
+        entityType: 'ingredient',
+        entityId: ingredient.id
+      }
+    });
+
+    res.json({
+      success: true,
+      data: { ingredient, nutrition: nutrition || null }
+    });
+  } catch (error) {
+    console.error('❌ Get ingredient nutrition error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Fehler beim Laden der Nährwerte'
+    });
+  }
+};
+
+/**
+ * ========================================
+ * 🧾 GET SINGLE INGREDIENT
+ * ========================================
+ * GET /api/v1/ingredients/:id
+ * Private
+ */
+exports.getIngredient = async (req, res) => {
+  try {
+    const ingredient = await Ingredient.findOne({
+      where: {
+        id: req.params.id,
+        restaurantId: req.user.restaurantId
+      },
+      include: [
+        {
+          model: Product,
+          as: 'products',
+          through: { attributes: ['quantity', 'unit'] },
+          where: { isActive: true },
+          required: false
+        }
+      ]
+    });
+
+    if (!ingredient) {
+      return res.status(404).json({
+        success: false,
+        message: 'Zutat nicht gefunden'
+      });
+    }
+
     res.json({
       success: true,
       data: ingredient
     });
   } catch (error) {
-    console.error('❌ Error fetching ingredient:', error);
+    console.error('❌ Get ingredient error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching ingredient',
-      error: error.message
+      message: 'Fehler beim Laden der Zutat'
     });
   }
 };
 
 /**
- * Create ingredient
+ * ========================================
+ * 🧱 CREATE INGREDIENT
+ * ========================================
+ * POST /api/v1/ingredients
+ * Private (admin/manager)
  */
 exports.createIngredient = async (req, res) => {
   try {
-    const ingredient = await Ingredient.create(req.body);
-    
+    const ingredientData = {
+      ...req.body,
+      restaurantId: req.user.restaurantId
+    };
+
+    const ingredient = await Ingredient.create(ingredientData);
+
     res.status(201).json({
       success: true,
-      data: ingredient,
-      message: 'Ingredient created successfully'
+      message: 'Zutat erfolgreich erstellt',
+      data: ingredient
     });
   } catch (error) {
-    console.error('❌ Error creating ingredient:', error);
+    console.error('❌ Create ingredient error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error creating ingredient',
+      message: 'Fehler beim Erstellen der Zutat',
       error: error.message
     });
   }
 };
 
 /**
- * Update ingredient
+ * ========================================
+ * ✏️ UPDATE INGREDIENT
+ * ========================================
+ * PUT /api/v1/ingredients/:id
+ * Private (admin/manager)
  */
 exports.updateIngredient = async (req, res) => {
   try {
-    const { id } = req.params;
-    
-    const ingredient = await Ingredient.findByPk(id);
-    
+    const ingredient = await Ingredient.findOne({
+      where: {
+        id: req.params.id,
+        restaurantId: req.user.restaurantId
+      }
+    });
+
     if (!ingredient) {
       return res.status(404).json({
         success: false,
-        message: 'Ingredient not found'
+        message: 'Zutat nicht gefunden'
       });
     }
-    
+
     await ingredient.update(req.body);
-    
+
     res.json({
       success: true,
-      data: ingredient,
-      message: 'Ingredient updated successfully'
+      message: 'Zutat erfolgreich aktualisiert',
+      data: ingredient
     });
   } catch (error) {
-    console.error('❌ Error updating ingredient:', error);
+    console.error('❌ Update ingredient error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error updating ingredient',
-      error: error.message
+      message: 'Fehler beim Aktualisieren der Zutat'
     });
   }
 };
 
 /**
- * Delete ingredient
+ * ========================================
+ * 🗑️ DELETE INGREDIENT
+ * ========================================
+ * DELETE /api/v1/ingredients/:id
+ * Private (admin)
  */
 exports.deleteIngredient = async (req, res) => {
   try {
-    const { id } = req.params;
-    
-    const ingredient = await Ingredient.findByPk(id);
-    
+    const ingredient = await Ingredient.findOne({
+      where: {
+        id: req.params.id,
+        restaurantId: req.user.restaurantId
+      },
+      include: [{ model: Product, as: 'products' }]
+    });
+
     if (!ingredient) {
       return res.status(404).json({
         success: false,
-        message: 'Ingredient not found'
+        message: 'Zutat nicht gefunden'
       });
     }
-    
-    await ingredient.destroy();
-    
-    res.json({
-      success: true,
-      message: 'Ingredient deleted successfully'
-    });
-  } catch (error) {
-    console.error('❌ Error deleting ingredient:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error deleting ingredient',
-      error: error.message
-    });
-  }
-};
 
-/**
- * Bulk delete ingredients
- */
-exports.bulkDeleteIngredients = async (req, res) => {
-  try {
-    const { ids } = req.body;
-    
-    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    if (ingredient.products && ingredient.products.length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'No ingredient IDs provided'
+        message: 'Zutat kann nicht gelöscht werden, da sie in Produkten verwendet wird',
+        usedIn: ingredient.products.map(p => ({ id: p.id, name: p.name }))
       });
     }
-    
-    const deleted = await Ingredient.destroy({
-      where: {
-        id: { [Op.in]: ids }
-      }
-    });
-    
+
+    await ingredient.update({ isActive: false });
+
     res.json({
       success: true,
-      message: `${deleted} ingredient(s) deleted successfully`,
-      deletedCount: deleted
+      message: 'Zutat erfolgreich gelöscht'
     });
   } catch (error) {
-    console.error('❌ Error bulk deleting ingredients:', error);
+    console.error('❌ Delete ingredient error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error deleting ingredients',
-      error: error.message
+      message: 'Fehler beim Löschen der Zutat'
     });
   }
 };
 
 /**
- * Get low stock ingredients
+ * ========================================
+ * 📉 LOW STOCK INGREDIENTS
+ * ========================================
+ * GET /api/v1/ingredients/low-stock
+ * Private
  */
 exports.getLowStockIngredients = async (req, res) => {
   try {
-    // Use static method from model
-    const ingredients = await Ingredient.getLowStockIngredients();
-    
+    const ingredients = await Ingredient.findAll({
+      where: {
+        restaurantId: req.user.restaurantId,
+        isActive: true,
+        stockQuantity: { [Op.lte]: sequelize.col('min_stock_level') }
+      },
+      order: [['stockQuantity', 'ASC']]
+    });
+
     res.json({
       success: true,
-      data: ingredients,
-      count: ingredients.length
+      count: ingredients.length,
+      data: ingredients
     });
   } catch (error) {
-    console.error('❌ Error fetching low stock ingredients:', error);
+    console.error('❌ Get low stock ingredients error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching low stock ingredients',
-      error: error.message
+      message: 'Fehler beim Laden der Zutaten mit niedrigem Lagerbestand'
+    });
+  }
+};
+
+/**
+ * ========================================
+ * ⚖️ UPDATE STOCK
+ * ========================================
+ * PATCH /api/v1/ingredients/:id/stock
+ * Private (admin/manager)
+ */
+exports.updateStock = async (req, res) => {
+  try {
+    const { quantity, operation } = req.body;
+
+    if (!quantity || !operation) {
+      return res.status(400).json({
+        success: false,
+        message: 'Menge und Operation sind erforderlich'
+      });
+    }
+
+    const ingredient = await Ingredient.findOne({
+      where: {
+        id: req.params.id,
+        restaurantId: req.user.restaurantId
+      }
+    });
+
+    if (!ingredient) {
+      return res.status(404).json({
+        success: false,
+        message: 'Zutat nicht gefunden'
+      });
+    }
+
+    const currentStock = parseFloat(ingredient.stockQuantity);
+    const change = parseFloat(quantity);
+    const newStock = operation === 'add' ? currentStock + change : currentStock - change;
+
+    if (newStock < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Unzureichender Lagerbestand'
+      });
+    }
+
+    await ingredient.update({ stockQuantity: newStock });
+
+    res.json({
+      success: true,
+      message: 'Lagerbestand erfolgreich aktualisiert',
+      data: {
+        previousStock: currentStock,
+        newStock,
+        change,
+        isLowStock: newStock <= parseFloat(ingredient.minStockLevel)
+      }
+    });
+  } catch (error) {
+    console.error('❌ Update stock error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Fehler beim Aktualisieren des Lagerbestands'
     });
   }
 };

@@ -21,10 +21,63 @@
       </div>
     </div>
 
-    <!-- Products Table -->
+    <!-- 🔍 SUCHFELD SEKTION -->
+    <div class="search-section">
+      <el-row :gutter="16" class="mb-4">
+        <el-col :span="8">
+          <el-input
+            v-model="search"
+            placeholder="Suche nach Produktname oder Beschreibung..."
+            prefix-icon="el-icon-search"
+            clearable
+            @input="handleSearchInput"
+          />
+        </el-col>
+        <el-col :span="6">
+          <el-select 
+            v-model="searchCategory" 
+            placeholder="Kategorie filtern"
+            clearable
+            style="width: 100%"
+          >
+            <el-option label="Alle Kategorien" value="" />
+            <el-option
+              v-for="cat in categories"
+              :key="cat.id"
+              :label="cat.name"
+              :value="cat.id"
+            >
+              <span 
+                style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px;"
+                :style="{ backgroundColor: cat.color || '#409EFF' }"
+              ></span>
+              <span>{{ cat.name }}</span>
+            </el-option>
+          </el-select>
+        </el-col>
+        <el-col :span="4">
+          <el-select 
+            v-model="searchStatus" 
+            placeholder="Status"
+            clearable
+            style="width: 100%"
+          >
+            <el-option label="Alle" value="" />
+            <el-option label="Verfügbar" value="available" />
+            <el-option label="Nicht verfügbar" value="unavailable" />
+          </el-select>
+        </el-col>
+        <el-col :span="6">
+          <el-button @click="resetFilters" style="margin-right: 10px;">Filter zurücksetzen</el-button>
+          <span class="search-results">{{ filteredProducts.length }} von {{ products.length }}</span>
+        </el-col>
+      </el-row>
+    </div>
+
+    <!-- Products Table - GEÄNDERT: filteredProducts statt products -->
     <el-card>
       <el-table 
-        :data="products" 
+        :data="filteredProducts" 
         v-loading="loading" 
         stripe
         @selection-change="handleSelectionChange"
@@ -103,11 +156,16 @@
         </el-alert>
       </div>
 
-      <!-- Debug Info -->
+      <!-- Debug Info - ERWEITERT mit Suche -->
       <div style="margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 4px;">
-        <strong>Debug:</strong> {{ products.length }} Products geladen | {{ categories.length }} Kategorien | 
+        <strong>Debug:</strong> 
+        {{ filteredProducts.length }}/{{ products.length }} Products angezeigt | 
+        {{ categories.length }} Kategorien | 
         Token: {{ !!tokenExists ? 'vorhanden' : 'fehlt' }} | 
-        Ausgewählt: {{ selectedProducts.length }}
+        Ausgewählt: {{ selectedProducts.length }} |
+        Suchbegriff: "{{ search }}" |
+        Kategorie-Filter: {{ searchCategory ? getCategoryNameById(searchCategory) : 'Alle' }} |
+        Status-Filter: {{ searchStatus || 'Alle' }}
       </div>
 
       <!-- Pagination -->
@@ -249,6 +307,11 @@ const showCreateDialog = ref(false)
 const editingProduct = ref(null)
 const selectedProducts = ref([]) // For bulk selection
 
+// 🔍 NEUE SUCHVARIABLEN
+const search = ref('')
+const searchCategory = ref('')
+const searchStatus = ref('')
+
 const productForm = reactive({
   name: '',
   category: '',  // ✅ Now stores category ID (UUID)
@@ -256,6 +319,66 @@ const productForm = reactive({
   cost: 0,
   description: ''
 })
+
+// ==========================================
+// 🔍 FILTER & SEARCH LOGIC
+// ==========================================
+const filteredProducts = computed(() => {
+  let filtered = products.value
+
+  // Text-Suche (Name und Beschreibung)
+  if (search.value) {
+    const searchTerm = search.value.toLowerCase()
+    filtered = filtered.filter(product => 
+      product.name?.toLowerCase().includes(searchTerm) ||
+      product.description?.toLowerCase().includes(searchTerm)
+    )
+  }
+
+  // Kategorie-Filter
+  if (searchCategory.value) {
+    filtered = filtered.filter(product => 
+      product.categoryId === searchCategory.value
+    )
+  }
+
+  // Status-Filter
+  if (searchStatus.value === 'available') {
+    filtered = filtered.filter(product => product.is_available === true)
+  } else if (searchStatus.value === 'unavailable') {
+    filtered = filtered.filter(product => product.is_available === false)
+  }
+
+  console.log('🔍 Filter Results:', filtered.length, 'of', products.value.length)
+  return filtered
+})
+
+// Debounced Search für Performance
+const handleSearchInput = debounce(() => {
+  console.log('🔍 Searching for:', search.value)
+  console.log('📊 Results:', filteredProducts.value.length, 'of', products.value.length)
+}, 300)
+
+// Filter zurücksetzen
+const resetFilters = () => {
+  search.value = ''
+  searchCategory.value = ''
+  searchStatus.value = ''
+  console.log('🔄 Filters reset')
+}
+
+// Debounce Helper
+function debounce(func, wait) {
+  let timeout
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout)
+      func(...args)
+    }
+    clearTimeout(timeout)
+    timeout = setTimeout(later, wait)
+  }
+}
 
 // ==========================================
 // CATEGORY HELPER FUNCTIONS
@@ -464,74 +587,57 @@ const handleEdit = (product) => {
 }
 
 // ✅ FIXED SAVE FUNCTION - Using camelCase to match backend
+// ✅ FIXED SAVE FUNCTION - Safe and stable version
 const handleSave = async () => {
   try {
-    console.log('💾 === SAVING PRODUCT DEBUG ===')
-    console.log('💾 Form data:', productForm)
-    console.log('💾 Selected category ID:', productForm.category)
-    console.log('💾 Category name:', getCategoryNameById(productForm.category))
-    
-    // ✅ FIXED: Use camelCase to match backend
+    console.log('💾 === SAVING PRODUCT DEBUG ===');
+    console.log('💾 Form data:', productForm);
+    console.log('💾 Selected category ID:', productForm.category);
+    console.log('💾 Category name:', getCategoryNameById(productForm.category));
+
     const saveData = {
       name: productForm.name.trim(),
       price: parseFloat(productForm.price) || 0,
       cost: parseFloat(productForm.cost) || 0,
       description: productForm.description?.trim() || '',
-      categoryId: productForm.category || null,  // ✅ FIXED: camelCase!
-      isActive: true  // ✅ ADDED: Backend expects isActive
-    }
-    
-    console.log('💾 Transformed save data:', saveData)
-    console.log('💾 Editing product ID:', editingProduct.value.id)
-    
-    if (editingProduct.value) {
-      console.log('💾 About to dispatch updateProduct...')
-      
+      categoryId: productForm.category || null, // ✅ camelCase
+      isActive: true
+    };
+
+    console.log('💾 Transformed save data:', saveData);
+
+    // ✅ Safely check editing state
+    if (editingProduct.value && editingProduct.value.id) {
+      console.log('💾 Updating product ID:', editingProduct.value.id);
+
       const dispatchData = {
         id: editingProduct.value.id,
         data: saveData
-      }
-      console.log('💾 Dispatch data:', dispatchData)
-      
-      const result = await store.dispatch('products/updateProduct', dispatchData)
-      console.log('💾 Dispatch result:', result)
-      
-      if (result && result.data) {
-        console.log('💾 API returned product:', result.data)
-        console.log('💾 API returned categoryId:', result.data.categoryId)
-      }
-      
-      ElMessage.success('Produkt aktualisiert')
-      console.log('✅ Product updated successfully')
+      };
+
+      console.log('💾 Dispatch data:', dispatchData);
+      const result = await store.dispatch('products/updateProduct', dispatchData);
+      console.log('💾 Update result:', result);
+      ElMessage.success('Produkt aktualisiert');
     } else {
-      console.log('💾 Creating new product')
-      const result = await store.dispatch('products/createProduct', saveData)
-      console.log('💾 Create result:', result)
-      ElMessage.success('Produkt erstellt')
-      console.log('✅ Product created successfully')
+      console.log('💾 Creating new product...');
+      const result = await store.dispatch('products/createProduct', saveData);
+      console.log('💾 Create result:', result);
+      ElMessage.success('Produkt erstellt');
     }
-    
-    showCreateDialog.value = false
-    resetForm()
-    
-    console.log('💾 Reloading products to verify save...')
-    await handleSearch()
-    
-    const updatedProduct = products.value.find(p => p.id === editingProduct.value?.id)
-    if (updatedProduct) {
-      console.log('💾 Product after reload:', updatedProduct)
-      console.log('💾 Category after reload:', updatedProduct.categoryId)  // camelCase!
-      console.log('💾 Category object after reload:', updatedProduct.category)
-    }
-    
+
+    // ✅ Reset dialog and reload
+    showCreateDialog.value = false;
+    resetForm();
+    await handleSearch();
+
   } catch (error) {
-    console.error('❌ Save error:', error)
-    console.error('❌ Error response:', error.response?.data)
-    console.error('❌ Error status:', error.response?.status)
-    console.error('❌ Full error:', error)
-    ElMessage.error('Fehler beim Speichern: ' + (error.response?.data?.message || error.message))
+    console.error('❌ Save error:', error);
+    console.error('❌ Error response:', error.response?.data);
+    console.error('❌ Error status:', error.response?.status);
+    ElMessage.error('Fehler beim Speichern: ' + (error.response?.data?.message || error.message));
   }
-}
+};
 
 const handleDelete = async (product) => {
   try {
@@ -637,6 +743,26 @@ onMounted(() => {
   margin: 0;
   font-size: 24px;
   color: #303133;
+}
+
+/* 🔍 NEUE STYLES FÜR SUCHFELD */
+.search-section {
+  margin-bottom: 20px;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e4e7ed;
+}
+
+.search-results {
+  margin-left: 10px;
+  color: #909399;
+  font-size: 14px;
+  line-height: 32px;
+}
+
+.mb-4 {
+  margin-bottom: 16px;
 }
 
 .price {

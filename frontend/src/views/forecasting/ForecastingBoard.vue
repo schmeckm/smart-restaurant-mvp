@@ -86,6 +86,9 @@
         <button @click="showImportDialog = true" class="import-btn">
           📥 Importieren
         </button>
+        <button @click="showUploadDialog = true" class="ai-upload-btn">
+          🤖 KI/CSV Upload
+        </button>
         <button @click="exportForecast" class="export-btn">
           📤 Exportieren
         </button>
@@ -201,6 +204,64 @@
       </template>
     </el-dialog>
 
+    <!-- AI/CSV Upload Dialog -->
+    <el-dialog v-model="showUploadDialog" title="Forecast Upload (AI / CSV)" width="600px">
+      <el-alert
+        title="Forecast Upload"
+        type="info"
+        :closable="false"
+        style="margin-bottom: 20px"
+      >
+        <p>Hier kannst du Forecast-Daten pro Produkt hochladen (z. B. aus einer KI oder CSV-Datei).</p>
+        <ul>
+          <li><strong>product_id</strong> oder <strong>product_name</strong></li>
+          <li><strong>KW 45, KW 46, KW 47, ...</strong></li>
+        </ul>
+      </el-alert>
+
+      <el-upload
+        ref="uploadAIRef"
+        :auto-upload="false"
+        :on-change="handleAIUploadFile"
+        :file-list="uploadFileList"
+        accept=".csv"
+        drag
+        :limit="1"
+      >
+        <el-icon class="el-icon--upload"><upload-filled /></el-icon>
+        <div class="el-upload__text">
+          CSV-Datei hier ablegen oder <em>klicken zum Auswählen</em>
+        </div>
+      </el-upload>
+
+      <div v-if="uploadPreview.length > 0" style="margin-top: 20px">
+        <h4>Vorschau (erste 5 Zeilen):</h4>
+        <el-table :data="uploadPreview.slice(0, 5)" size="small" max-height="250">
+          <el-table-column prop="product_name" label="Produkt" />
+          <el-table-column prop="total" label="Gesamt" width="100" />
+          <el-table-column label="Status" width="100">
+            <template #default="{ row }">
+              <el-tag :type="row.valid ? 'success' : 'danger'" size="small">
+                {{ row.valid ? 'OK' : 'Fehler' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <template #footer>
+        <el-button @click="handleCancelUpload">Abbrechen</el-button>
+        <el-button
+          type="primary"
+          @click="uploadForecastToServer"
+          :loading="uploading"
+          :disabled="uploadPreview.length === 0"
+        >
+          📤 Hochladen
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- Forecasting Grid -->
     <div class="grid-container">
       <table class="forecast-table">
@@ -218,7 +279,7 @@
             <td class="product-cell">
               <div class="product-info">
                 <span class="product-name">{{ product.name }}</span>
-                <span class="product-category">{{ product.category }}</span>
+                <span class="product-category">{{ getProductCategory(product) }}</span>
               </div>
             </td>
             <td v-for="column in timeColumns" :key="`${product.id}-${column.id}`" class="forecast-cell">
@@ -376,6 +437,10 @@ export default {
       importFileList: [],
       importPreview: [],
       importing: false,
+      showUploadDialog: false,
+      uploadFileList: [],
+      uploadPreview: [],
+      uploading: false,
       
       // Version management
       selectedVersionId: null,
@@ -411,6 +476,14 @@ export default {
     this.generateTimeColumns()
   },
   methods: {
+    // 🔥 CORRECTED: Category display helper
+    getProductCategory(product) {
+      if (product.category && typeof product.category === 'object') {
+        return product.category.name || ''
+      }
+      return product.category || product.categoryName || ''
+    },
+
     // Version Management
     async loadVersions() {
       try {
@@ -685,11 +758,19 @@ export default {
       }
     },
 
+    // 🔥 CORRECTED: Products loading
     async loadProducts() {
       try {
         this.loading = true
         const response = await this.$store.dispatch('products/fetchProducts', { limit: 100 })
-        this.products = response.data?.products || []
+        
+        // 🔥 CORRECTED: Handle different response formats like in Sales
+        this.products = Array.isArray(response.data) ? response.data : 
+                       Array.isArray(response.data?.products) ? response.data.products :
+                       Array.isArray(response.data?.data) ? response.data.data : 
+                       Array.isArray(response) ? response : []
+        
+        console.log('✅ Loaded products:', this.products.length)
         this.initializeForecasts()
       } catch (error) {
         console.error('Error loading products:', error)
@@ -1054,7 +1135,7 @@ export default {
         const row = [
           product.id,
           product.name.replace(/;/g, ','),
-          (product.category || '').replace(/;/g, ',')
+          this.getProductCategory(product).replace(/;/g, ',')
         ]
         
         this.timeColumns.forEach(col => {
@@ -1172,6 +1253,66 @@ export default {
       reader.readAsText(file.raw)
     },
 
+    // ======================================================
+    // 🐛 BUGFIX: Fehlende handleAIUploadFile Methode hinzugefügt
+    // ======================================================
+    handleAIUploadFile(file) {
+      this.uploadFileList = [file]
+      const reader = new FileReader()
+      
+      reader.onload = (e) => {
+        try {
+          const text = e.target.result
+          const { headers, rows } = this.parseCSV(text)
+          
+          this.uploadPreview = rows.slice(0, 100).map(row => {
+            const preview = {
+              valid: true,
+              errors: [],
+              product_name: row.product_name || row.Produktname || '',
+              product_id: row.product_id || null,
+              values: [],
+              total: 0
+            }
+
+            // Produkt-Matching
+            let product = null
+            if (row.product_id) {
+              product = this.products.find(p => p.id === parseInt(row.product_id))
+            } else if (preview.product_name) {
+              const name = preview.product_name.toLowerCase()
+              product = this.products.find(p => 
+                p.name.toLowerCase().includes(name) || name.includes(p.name.toLowerCase())
+              )
+            }
+
+            if (!product) {
+              preview.valid = false
+              preview.errors.push('Produkt nicht gefunden')
+            } else {
+              preview.product_id = product.id
+              preview.product_name = product.name
+            }
+
+            // Werte für aktuelle Zeiträume extrahieren
+            this.timeColumns.forEach((column, index) => {
+              const value = parseInt(row[column.label] || row[`period_${index}`] || 0) || 0
+              preview.values.push(value)
+              preview.total += value
+            })
+
+            return preview
+          })
+
+        } catch (error) {
+          this.$message.error('Fehler beim Lesen der AI/CSV-Datei')
+          console.error(error)
+        }
+      }
+      
+      reader.readAsText(file.raw)
+    },
+
     handleImportForecast() {
       const validImports = this.importPreview.filter(r => r.valid)
       
@@ -1208,6 +1349,86 @@ export default {
       this.showImportDialog = false
       this.importFileList = []
       this.importPreview = []
+    },
+
+    // ======================================================
+    // 🐛 BUGFIX: Verbesserte uploadForecastToServer Methode
+    // ======================================================
+    async uploadForecastToServer() {
+      if (!this.currentVersion) {
+        this.$message.warning('Bitte zuerst eine Version auswählen!')
+        return
+      }
+
+      if (this.uploadPreview.length === 0) {
+        this.$message.warning('Bitte zuerst eine Datei importieren!')
+        return
+      }
+
+      try {
+        this.uploading = true
+
+        const validItems = this.uploadPreview.filter(r => r.valid)
+        
+        if (validItems.length === 0) {
+          this.$message.warning('Keine gültigen Einträge zum Hochladen!')
+          return
+        }
+
+        const items = validItems.flatMap(row =>
+          row.values.map((quantity, idx) => ({
+            productId: row.product_id,
+            periodIndex: idx,
+            periodLabel: this.timeColumns[idx]?.label || `Period ${idx + 1}`,
+            quantity: quantity || 0
+          })).filter(item => item.quantity > 0)
+        )
+
+        console.log('📤 Uploading forecast items:', items.length)
+
+        // Verwende Store-Action oder direkten API-Call
+        try {
+          await this.$store.dispatch('forecasts/uploadForecastItems', {
+            versionId: this.currentVersion.id,
+            items
+          })
+        } catch (storeError) {
+          // Fallback zu direktem API-Call
+          const baseUrl = import.meta.env.VITE_API_URL || 'https://iotshowroom.de/api/v1'
+          const response = await this.$axios.post(
+            `${baseUrl}/forecasts/${this.currentVersion.id}/items`,
+            { items }
+          )
+        }
+
+        this.$message.success('Forecast erfolgreich hochgeladen')
+        this.handleCancelUpload()
+        this.hasChanges = false
+        await this.loadVersion(this.currentVersion.id)
+        
+      } catch (error) {
+        console.error('❌ Upload-Fehler:', error)
+        
+        if (error.response?.status === 404) {
+          this.$message.error('Version nicht gefunden')
+        } else if (error.response?.status === 422) {
+          this.$message.error('Ungültige Daten')
+        } else {
+          this.$message.error('Fehler beim Upload')
+        }
+      } finally {
+        this.uploading = false
+      }
+    },
+
+    // ======================================================
+    // 🐛 BUGFIX: Fehlende Cancel-Methode für AI-Upload hinzugefügt
+    // ======================================================
+    handleCancelUpload() {
+      this.showUploadDialog = false
+      this.uploadFileList = []
+      this.uploadPreview = []
+      this.uploading = false
     },
 
     async clearAllForecasts() {
@@ -1752,5 +1973,19 @@ export default {
 .summary-row.total .summary-value {
   color: #67c23a;
   font-size: 24px;
+}
+
+.ai-upload-btn {
+  background: #909399;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.ai-upload-btn:hover {
+  background: #a6a9ad;
 }
 </style>

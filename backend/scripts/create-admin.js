@@ -1,82 +1,88 @@
 // backend/scripts/create-admin.js
-// Erstellt Admin User und Test-Daten
-
-const { User, Category, Ingredient } = require('../src/models');
 const bcrypt = require('bcryptjs');
+const { sequelize, Restaurant, User } = require('../src/models');
+require('dotenv').config();
 
-async function createAdmin() {
+const createAdmin = async () => {
   try {
-    console.log('🔐 Creating admin user...\n');
+    // Test DB connection
+    await sequelize.authenticate();
+    console.log('✅ Database connection established successfully\n');
 
+    // ========== SCHRITT 1: Restaurant erstellen ==========
+    console.log('🏢 Creating default restaurant...');
+    
+    const [restaurant, restaurantCreated] = await Restaurant.findOrCreate({
+      where: { name: 'Demo Restaurant' },
+      defaults: {
+        name: 'Demo Restaurant',
+        email: 'info@restaurant.com',
+        phone: '+41 12 345 67 89',
+        street: 'Hauptstrasse 1',
+        city: 'Zürich',
+        postalCode: '8001',
+        country: 'CH',
+        preferredLanguage: 'de',
+        supportedLanguages: ['de', 'en'],
+        unitSystem: 'metric',
+        currency: 'CHF',
+        timezone: 'Europe/Zurich',
+        dateFormat: 'DD.MM.YYYY',
+        isActive: true
+      }
+    });
+
+    if (restaurantCreated) {
+      console.log('✅ Restaurant created:', restaurant.name);
+      console.log('   ID:', restaurant.id);
+    } else {
+      console.log('ℹ️  Restaurant already exists:', restaurant.name);
+      console.log('   ID:', restaurant.id);
+    }
+    console.log();
+
+    // ========== SCHRITT 2: Admin User erstellen ==========
+    console.log('🔐 Creating admin user...');
+    
+    const adminEmail = 'admin@restaurant.com';
+    
     // Check if admin exists
     const existingAdmin = await User.findOne({ 
-      where: { email: 'admin@restaurant.com' } 
+      where: { email: adminEmail } 
     });
 
     if (existingAdmin) {
-      console.log('✅ Admin user already exists!');
-      console.log('   Email: admin@restaurant.com');
-      console.log('   Password: admin123\n');
-      return;
+      console.log('ℹ️  Admin user already exists:', adminEmail);
+      console.log('   Restaurant:', restaurant.name);
+      console.log('   Role:', existingAdmin.role);
+      console.log();
+      console.log('✅ Setup complete!\n');
+      process.exit(0);
     }
 
     // Hash password
     const hashedPassword = await bcrypt.hash('admin123', 10);
 
-    // Create admin user
+    // Create admin user WITH restaurant_id
     const admin = await User.create({
-      email: 'admin@restaurant.com',
+      email: adminEmail,
       password: hashedPassword,
       name: 'Admin User',
       role: 'admin',
+      restaurantId: restaurant.id,  // ← WICHTIG!
+      uiLanguage: 'de',
       isActive: true
     });
 
-    console.log('✅ Admin user created!');
-    console.log('   Email: admin@restaurant.com');
-    console.log('   Password: admin123');
-    console.log('   ID:', admin.id, '\n');
-
-    // Create categories
-    console.log('📁 Creating categories...');
-    const categories = [
-      { name: 'Pizza', color: '#FF6B6B', icon: '🍕' },
-      { name: 'Pasta', color: '#4ECDC4', icon: '🍝' },
-      { name: 'Salad', color: '#95E1D3', icon: '🥗' },
-      { name: 'Dessert', color: '#F38181', icon: '🍰' },
-      { name: 'Drinks', color: '#AA96DA', icon: '🥤' }
-    ];
-
-    for (const cat of categories) {
-      await Category.findOrCreate({
-        where: { name: cat.name },
-        defaults: cat
-      });
-    }
-    console.log('✅ Categories created\n');
-
-    // Create sample ingredients
-    console.log('🥬 Creating sample ingredients...');
-    const ingredients = [
-      { name: 'Flour', unit: 'g', pricePerUnit: 0.002, stockQuantity: 5000, minStock: 1000 },
-      { name: 'Tomatoes', unit: 'g', pricePerUnit: 0.005, stockQuantity: 2000, minStock: 500 },
-      { name: 'Mozzarella', unit: 'g', pricePerUnit: 0.012, stockQuantity: 3000, minStock: 500 },
-      { name: 'Olive Oil', unit: 'ml', pricePerUnit: 0.015, stockQuantity: 1000, minStock: 200 },
-      { name: 'Basil', unit: 'g', pricePerUnit: 0.08, stockQuantity: 100, minStock: 20 }
-    ];
-
-    for (const ing of ingredients) {
-      await Ingredient.findOrCreate({
-        where: { name: ing.name },
-        defaults: ing
-      });
-    }
-    console.log('✅ Sample ingredients created\n');
-
-    console.log('🎉 SETUP COMPLETE!\n');
-    console.log('You can now login with:');
-    console.log('   Email: admin@restaurant.com');
-    console.log('   Password: admin123\n');
+    console.log('✅ Admin user created successfully!');
+    console.log();
+    console.log('📋 Login Credentials:');
+    console.log('   Email:    ', admin.email);
+    console.log('   Password: ', 'admin123');
+    console.log('   Role:     ', admin.role);
+    console.log('   Restaurant:', restaurant.name);
+    console.log();
+    console.log('🚀 You can now login with these credentials!\n');
 
     process.exit(0);
   } catch (error) {
@@ -84,6 +90,12 @@ async function createAdmin() {
     console.error(error);
     process.exit(1);
   }
+};
+
+// Run if called directly
+if (require.main === module) {
+  console.log('🔐 Creating admin user...\n');
+  createAdmin();
 }
 
-createAdmin();
+module.exports = createAdmin;

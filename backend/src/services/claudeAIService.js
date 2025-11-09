@@ -43,7 +43,6 @@ class ClaudeAIService {
         customInstructions
       });
 
-      // dynamic creativity
       const temperature =
         difficulty === 'easy'
           ? 0.4
@@ -51,7 +50,6 @@ class ClaudeAIService {
           ? 0.9
           : 0.7;
 
-      // timeout protection
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 30000);
 
@@ -78,7 +76,6 @@ class ClaudeAIService {
         throw new Error(`Invalid JSON structure from AI: ${parseErr.message}`);
       }
 
-      // structural validation
       if (
         typeof recipeData.name !== 'string' ||
         !Array.isArray(recipeData.ingredients) ||
@@ -87,9 +84,7 @@ class ClaudeAIService {
         throw new Error('Invalid recipe structure from AI response');
       }
 
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`✅ ${language.toUpperCase()} recipe generated successfully:`, recipeData.name);
-      }
+      console.log(`✅ ${language.toUpperCase()} recipe generated successfully:`, recipeData.name);
 
       return {
         success: true,
@@ -106,7 +101,119 @@ class ClaudeAIService {
     }
   }
 
-  // ======== PRIVATE METHOD ========
+  // ======== PUBLIC METHOD ========
+  async generateNutritionForIngredient(ingredientName, language = 'de') {
+    try {
+      console.log(`🥦 Fetching Nutrition Data via Claude for: ${ingredientName}`);
+
+      const prompt = `
+        Du bist ein Ernährungswissenschaftler. Gib die durchschnittlichen Nährwerte pro 100g 
+        für die Zutat "${ingredientName}" zurück.
+        Antworte ausschließlich als JSON mit:
+        { "calories": Zahl, "protein": Zahl, "fat": Zahl, "carbohydrates": Zahl, "fiber": Zahl, "sugar": Zahl }
+      `;
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20000);
+
+      const response = await this.client.messages.create(
+        {
+          model: 'claude-3-5-haiku-20241022',
+          max_tokens: 300,
+          temperature: 0.2,
+          messages: [{ role: 'user', content: prompt }]
+        },
+        { signal: controller.signal }
+      );
+      clearTimeout(timeout);
+
+      const text = response.content?.[0]?.text?.trim() || '';
+      if (!text) throw new Error('Empty nutrition response from Claude');
+
+      const jsonText = text.replace(/```json|```/g, '').trim();
+      const nutritionData = JSON.parse(jsonText);
+
+      if (typeof nutritionData.calories !== 'number') {
+        throw new Error('Invalid structure (missing calories)');
+      }
+
+      console.log(`✅ Nutrition Data for "${ingredientName}" loaded successfully`);
+      return nutritionData;
+
+    } catch (error) {
+      console.error(`❌ Claude Nutrition Error for "${ingredientName}":`, error.message);
+      return { calories: 0, protein: 0, fat: 0, carbohydrates: 0, fiber: 0, sugar: 0, error: error.message };
+    }
+  }
+
+  // ======== PUBLIC METHOD: getDemandSignal ========
+  async getDemandSignal(restaurant = {}) {
+    try {
+      const city = restaurant.city || 'Basel';
+      const country = restaurant.country || 'CH';
+
+      console.log(`📈 Requesting Demand Signal for ${city}, ${country} from Claude AI`);
+
+      const prompt = `
+Analysiere lokale Ereignisse, gesellschaftliche Trends, Wetterbedingungen
+und Sport-/TV-Events für die Region ${city}, ${country}, die die Restaurantbesuche beeinflussen könnten.
+Erstelle eine JSON-Antwort im folgenden Format:
+{
+  "summary": "Kurze Gesamteinschätzung zur heutigen Nachfrage",
+  "influences": [
+    { "name": "Wetter", "impact": 3, "description": "Mildes Herbstwetter, mehr Außengastronomie" },
+    { "name": "Sportevent", "impact": -2, "description": "Fußballspiel im Fernsehen lenkt Gäste ab" },
+    { "name": "Abendprogramm", "impact": 4, "description": "Beliebte Show in der Innenstadt zieht Publikum" }
+  ]
+}
+Antworte ausschließlich mit gültigem JSON, ohne Kommentare oder Zusatztexte.
+`;
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25000);
+
+      const response = await this.client.messages.create(
+        {
+          model: 'claude-3-5-haiku-20241022',
+          max_tokens: 500,
+          temperature: 0.5,
+          messages: [{ role: 'user', content: prompt }]
+        },
+        { signal: controller.signal }
+      );
+      clearTimeout(timeout);
+
+      const content = response.content?.[0]?.text?.trim() || '{}';
+      let parsed;
+      try {
+        const jsonText = content.replace(/```json|```/g, '').trim();
+        parsed = JSON.parse(jsonText);
+      } catch {
+        console.warn('⚠️ KI-Antwort war kein valides JSON:', content);
+        parsed = {
+          summary: 'Fallback-Demand-Prognose (kein valides JSON erhalten)',
+          influences: [
+            { name: 'Wetter', impact: 1, description: 'Neutrale Bedingungen' }
+          ]
+        };
+      }
+
+      return { success: true, data: parsed };
+    } catch (error) {
+      console.error('❌ Claude DemandSignal Error:', error.message);
+      return {
+        success: false,
+        data: {
+          summary: 'Fallback ohne KI',
+          influences: [
+            { name: 'Wetter', impact: 0, description: 'Keine Daten verfügbar' }
+          ]
+        }
+      };
+    }
+  }
+
+  // ======== PRIVATE HELPER ========
   buildRecipePrompt({
     productName,
     productDescription,
@@ -121,81 +228,26 @@ class ClaudeAIService {
       de: {
         units: 'Gramm (g), Milliliter (ml), Liter (l), Esslöffel (EL), Teelöffel (TL), Stück',
         instruction: 'Erstelle das Rezept komplett auf Deutsch.',
-        style: 'traditionell deutsch',
-        nameExample: 'Klassische Pizza Margherita',
-        descExample: 'Ein köstliches italienisches Gericht mit frischen Zutaten',
-        unitExamples: 'z.B. 300g, 200ml, 2 EL, 1 TL'
+        style: 'traditionell deutsch'
       },
       en: {
-        units: 'cups, tablespoons (tbsp), teaspoons (tsp), ounces (oz), pounds (lb), pieces',
+        units: 'cups, tablespoons (tbsp), teaspoons (tsp), ounces (oz), pounds (lb)',
         instruction: 'Create the recipe completely in English.',
-        style: 'traditional english',
-        nameExample: 'Classic Pizza Margherita',
-        descExample: 'A delicious Italian dish with fresh ingredients',
-        unitExamples: 'e.g. 2 cups, 3 tbsp, 1 tsp'
-      },
-      it: {
-        units: 'grammi (g), millilitri (ml), cucchiai, cucchiaini, pezzi',
-        instruction: 'Crea la ricetta completamente in italiano.',
-        style: 'tradizionale italiano',
-        nameExample: 'Pizza Margherita Classica',
-        descExample: 'Un delizioso piatto italiano con ingredienti freschi',
-        unitExamples: 'es. 300g, 200ml, 2 cucchiai'
-      },
-      fr: {
-        units: 'grammes (g), millilitres (ml), cuillères à soupe (c. à s.), cuillères à café (c. à c.), pièces',
-        instruction: 'Créez la recette entièrement en français.',
-        style: 'traditionnel français',
-        nameExample: 'Pizza Margherita Classique',
-        descExample: 'Un délicieux plat italien avec des ingrédients frais',
-        unitExamples: 'ex. 300g, 200ml, 2 c. à s.'
+        style: 'traditional english'
       }
     };
 
     const cfg = languageConfig[language] || languageConfig.de;
-    const dietaryNote =
-      dietaryRestrictions.length > 0
-        ? `\n- Dietary restrictions: ${dietaryRestrictions.join(', ')}`
-        : '';
-    const customNote = customInstructions
-      ? `\n- Special instructions: ${customInstructions}`
-      : '';
-
-    return `You are a professional chef and recipe developer. ${cfg.instruction}
+    return `You are a professional chef. ${cfg.instruction}
 
 RECIPE REQUEST:
 - Dish: ${productName}
-${productDescription ? `- Description: ${productDescription}` : ''}
+- Description: ${productDescription}
 - Servings: ${servings}
 - Cuisine: ${cuisine} (${cfg.style})
 - Difficulty: ${difficulty}
-- Language: ${language.toUpperCase()}${dietaryNote}${customNote}
 
-MEASUREMENT UNITS TO USE: ${cfg.units}
-Examples: ${cfg.unitExamples}
-
-IMPORTANT: Respond ONLY with valid JSON in this format:
-{
-  "name": "${cfg.nameExample}",
-  "description": "${cfg.descExample}",
-  "prepTime": 20,
-  "cookTime": 15,
-  "servings": ${servings},
-  "difficulty": "${difficulty}",
-  "cuisine": "${cuisine}",
-  "ingredients": [
-    { "name": "ingredient in ${language}", "quantity": 300, "unit": "g", "notes": "optional" }
-  ],
-  "instructions": ["Step 1 in ${language}...", "Step 2 in ${language}..."],
-  "tags": ["${cuisine}", "${difficulty}"],
-  "nutrition": { "calories": 450, "protein": 15, "carbs": 35, "fat": 20 }
-}
-
-Requirements:
-- Use authentic ${cuisine} cuisine ingredients and techniques
-- ${cfg.instruction}
-- Use ${cfg.units}
-- Include 5–8 detailed steps and realistic nutrition values.`;
+Respond ONLY with valid JSON.`;
   }
 }
 

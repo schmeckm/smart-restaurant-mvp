@@ -1,297 +1,274 @@
-// backend/routes/nutrition.js
-// API Routes für Nutrition Management
-
+// backend/src/routes/nutrition.js
 const express = require('express');
 const router = express.Router();
-const { Nutrition, Ingredient, Product } = require('../models');
+const nutritionController = require('../controllers/nutritionController');
+const { protect } = require('../middleware/auth');
 
-// ==========================================
-// GET - Nutrition für ein Ingredient
-// ==========================================
-router.get('/ingredient/:ingredientId', async (req, res) => {
-  try {
-    const nutrition = await Nutrition.findOne({
-      where: {
-        entity_type: 'ingredient',
-        entity_id: req.params.ingredientId
-      }
-    });
+/**
+ * @swagger
+ * tags:
+ *   name: Nutrition
+ *   description: Endpoints zur Berechnung und Verwaltung von Nährwerten (inkl. AI-Fallback)
+ */
 
-    if (!nutrition) {
-      return res.status(404).json({ 
-        error: 'Keine Nährstoffdaten für dieses Ingredient gefunden' 
-      });
-    }
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     Nutrition:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         entityType:
+ *           type: string
+ *           example: ingredient
+ *         entityId:
+ *           type: string
+ *           format: uuid
+ *         calories:
+ *           type: number
+ *           example: 42.5
+ *         protein:
+ *           type: number
+ *           example: 3.2
+ *         fat:
+ *           type: number
+ *           example: 0.8
+ *         carbohydrates:
+ *           type: number
+ *           example: 9.4
+ *         fiber:
+ *           type: number
+ *           example: 1.1
+ *         sugar:
+ *           type: number
+ *           example: 5.6
+ *         nutritionSource:
+ *           type: string
+ *           example: ai-claude
+ */
 
-    res.json(nutrition);
-  } catch (error) {
-    console.error('Error fetching ingredient nutrition:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+// 🔐 Alle Nutrition-Routen sind geschützt
+router.use(protect);
 
-// ==========================================
-// GET - Nutrition für ein Product
-// ==========================================
-router.get('/product/:productId', async (req, res) => {
-  try {
-    // Versuche zuerst gespeicherte Nutrition zu finden
-    let nutrition = await Nutrition.findOne({
-      where: {
-        entity_type: 'product',
-        entity_id: req.params.productId
-      }
-    });
+/**
+ * @swagger
+ * /api/v1/nutrition:
+ *   get:
+ *     summary: Alle Nährwert-Einträge abrufen
+ *     tags: [Nutrition]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Liste aller Nährwerte
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Nutrition'
+ */
+router.get('/', nutritionController.getAll);
 
-    // Falls keine gespeichert, berechne automatisch
-    if (!nutrition) {
-      const product = await Product.findByPk(req.params.productId);
-      if (!product) {
-        return res.status(404).json({ error: 'Product nicht gefunden' });
-      }
+/**
+ * @swagger
+ * /api/v1/nutrition:
+ *   post:
+ *     summary: Neuen Nährwert-Eintrag erstellen
+ *     tags: [Nutrition]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Nutrition'
+ *     responses:
+ *       201:
+ *         description: Nährwert erfolgreich erstellt
+ */
+router.post('/', nutritionController.create);
 
-      const calculated = await product.calculateNutrition();
-      return res.json({
-        calculated: true,
-        ...calculated
-      });
-    }
+/**
+ * @swagger
+ * /api/v1/nutrition/{id}:
+ *   get:
+ *     summary: Einzelnen Nährwert-Eintrag abrufen
+ *     tags: [Nutrition]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Nährwert-Eintrag gefunden
+ *       404:
+ *         description: Eintrag nicht gefunden
+ */
+router.get('/:id', nutritionController.getById);
 
-    res.json(nutrition);
-  } catch (error) {
-    console.error('Error fetching product nutrition:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+/**
+ * @swagger
+ * /api/v1/nutrition/{id}:
+ *   put:
+ *     summary: Nährwert-Eintrag aktualisieren
+ *     tags: [Nutrition]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Nutrition'
+ *     responses:
+ *       200:
+ *         description: Erfolgreich aktualisiert
+ *       404:
+ *         description: Eintrag nicht gefunden
+ */
+router.put('/:id', nutritionController.update);
 
-// ==========================================
-// POST - Nutrition für Ingredient erstellen/updaten
-// ==========================================
-router.post('/ingredient/:ingredientId', async (req, res) => {
-  try {
-    const ingredient = await Ingredient.findByPk(req.params.ingredientId);
-    if (!ingredient) {
-      return res.status(404).json({ error: 'Ingredient nicht gefunden' });
-    }
+/**
+ * @swagger
+ * /api/v1/nutrition/{id}:
+ *   delete:
+ *     summary: Nährwert-Eintrag löschen
+ *     tags: [Nutrition]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Erfolgreich gelöscht
+ *       404:
+ *         description: Eintrag nicht gefunden
+ */
+router.delete('/:id', nutritionController.delete);
 
-    const [nutrition, created] = await Nutrition.findOrCreate({
-      where: {
-        entity_type: 'ingredient',
-        entity_id: req.params.ingredientId
-      },
-      defaults: {
-        ...req.body,
-        entity_type: 'ingredient',
-        entity_id: req.params.ingredientId
-      }
-    });
+/**
+ * @swagger
+ * /api/v1/nutrition/ingredient/{id}:
+ *   get:
+ *     summary: Liefert Nährwerte für eine Zutat (mit Claude KI-Fallback)
+ *     tags: [Nutrition]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: ID der Zutat (Ingredient)
+ *     responses:
+ *       200:
+ *         description: Erfolgreiche Antwort mit Nährwertdaten
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 source:
+ *                   type: string
+ *                   example: ai-claude
+ *                 data:
+ *                   $ref: '#/components/schemas/Nutrition'
+ *       404:
+ *         description: Ingredient nicht gefunden
+ *       500:
+ *         description: Serverfehler oder AI-Service nicht erreichbar
+ */
+router.get('/ingredient/:id', nutritionController.getByIngredient);
 
-    if (!created) {
-      // Update existing
-      await nutrition.update(req.body);
-    }
+/**
+ * @swagger
+ * /api/v1/nutrition/product/{id}:
+ *   get:
+ *     summary: Liefert Nährwerte für ein Produkt (mit Claude KI-Fallback)
+ *     tags: [Nutrition]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: ID des Produkts
+ *     responses:
+ *       200:
+ *         description: Erfolgreiche Antwort mit Nährwertdaten
+ *       404:
+ *         description: Produkt nicht gefunden
+ *       500:
+ *         description: Serverfehler
+ */
+router.get('/product/:id', nutritionController.getByProduct);
 
-    res.status(created ? 201 : 200).json(nutrition);
-  } catch (error) {
-    console.error('Error creating/updating ingredient nutrition:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
 
-// ==========================================
-// POST - Nutrition für Product erstellen/updaten
-// ==========================================
-router.post('/product/:productId', async (req, res) => {
-  try {
-    const product = await Product.findByPk(req.params.productId);
-    if (!product) {
-      return res.status(404).json({ error: 'Product nicht gefunden' });
-    }
+/**
+ * @swagger
+ * /api/v1/nutrition/bulk-status:
+ *   post:
+ *     summary: Prüft Nährwerte-Status für mehrere Entities
+ *     tags: [Nutrition]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               entityIds:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: uuid
+ *               entityType:
+ *                 type: string
+ *                 example: ingredient
+ *     responses:
+ *       200:
+ *         description: Status-Map für alle angefragten Entities
+ *       400:
+ *         description: Ungültige Anfrage
+ */
+router.post('/bulk-status', nutritionController.checkBulkStatus);
 
-    const [nutrition, created] = await Nutrition.findOrCreate({
-      where: {
-        entity_type: 'product',
-        entity_id: req.params.productId
-      },
-      defaults: {
-        ...req.body,
-        entity_type: 'product',
-        entity_id: req.params.productId
-      }
-    });
-
-    if (!created) {
-      await nutrition.update(req.body);
-    }
-
-    res.status(created ? 201 : 200).json(nutrition);
-  } catch (error) {
-    console.error('Error creating/updating product nutrition:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ==========================================
-// POST - Berechne Nutrition automatisch für Product
-// ==========================================
-router.post('/product/:productId/calculate', async (req, res) => {
-  try {
-    const product = await Product.findByPk(req.params.productId);
-    if (!product) {
-      return res.status(404).json({ error: 'Product nicht gefunden' });
-    }
-
-    const calculated = await product.calculateNutrition();
-    
-    // Optional: Speichere die berechneten Werte
-    if (req.body.save) {
-      const [nutrition] = await Nutrition.findOrCreate({
-        where: {
-          entity_type: 'product',
-          entity_id: req.params.productId
-        },
-        defaults: {
-          ...calculated,
-          entity_type: 'product',
-          entity_id: req.params.productId,
-          nutrition_source: 'calculated'
-        }
-      });
-
-      await nutrition.update({
-        ...calculated,
-        nutrition_source: 'calculated'
-      });
-
-      return res.json(nutrition);
-    }
-
-    res.json({ calculated: true, ...calculated });
-  } catch (error) {
-    console.error('Error calculating product nutrition:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ==========================================
-// DELETE - Nutrition löschen
-// ==========================================
-router.delete('/:entityType/:entityId', async (req, res) => {
-  try {
-    const { entityType, entityId } = req.params;
-
-    if (!['ingredient', 'product'].includes(entityType)) {
-      return res.status(400).json({ 
-        error: 'Invalid entity type. Must be "ingredient" or "product"' 
-      });
-    }
-
-    const result = await Nutrition.destroy({
-      where: {
-        entity_type: entityType,
-        entity_id: entityId
-      }
-    });
-
-    if (result === 0) {
-      return res.status(404).json({ error: 'Nutrition nicht gefunden' });
-    }
-
-    res.json({ message: 'Nutrition deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting nutrition:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ==========================================
-// GET - Alle Ingredients mit Nutrition
-// ==========================================
-router.get('/ingredients/all', async (req, res) => {
-  try {
-    const ingredients = await Ingredient.findAll({
-      include: [
-        {
-          model: Nutrition,
-          as: 'nutrition',
-          required: false
-        }
-      ]
-    });
-
-    res.json(ingredients);
-  } catch (error) {
-    console.error('Error fetching ingredients with nutrition:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ==========================================
-// GET - Alle Products mit Nutrition
-// ==========================================
-router.get('/products/all', async (req, res) => {
-  try {
-    const products = await Product.findAll({
-      include: [
-        {
-          model: Nutrition,
-          as: 'nutrition',
-          required: false
-        }
-      ]
-    });
-
-    res.json(products);
-  } catch (error) {
-    console.error('Error fetching products with nutrition:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ==========================================
-// POST - Bulk Update: AI-Analyze alle Ingredients
-// ==========================================
-router.post('/bulk/analyze-ingredients', async (req, res) => {
-  try {
-    const ingredients = await Ingredient.findAll({
-      include: [
-        {
-          model: Nutrition,
-          as: 'nutrition',
-          required: false
-        }
-      ]
-    });
-
-    const results = {
-      total: ingredients.length,
-      analyzed: 0,
-      failed: 0,
-      skipped: 0
-    };
-
-    for (const ingredient of ingredients) {
-      // Skip wenn bereits Nutrition vorhanden
-      if (ingredient.nutrition) {
-        results.skipped++;
-        continue;
-      }
-
-      try {
-        // Hier würde der AI-Service aufgerufen werden
-        // Für jetzt: Placeholder
-        results.analyzed++;
-      } catch (error) {
-        console.error(`Failed to analyze ${ingredient.name}:`, error);
-        results.failed++;
-      }
-    }
-
-    res.json(results);
-  } catch (error) {
-    console.error('Error in bulk analysis:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
 
 module.exports = router;

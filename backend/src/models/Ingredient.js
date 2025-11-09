@@ -1,240 +1,242 @@
 // backend/src/models/Ingredient.js
-// Fixed Ingredient Model with UUID and Nutrition support
+// Ingredient Model + Multi-Tenant Support + costPerUnit Alias
 
 const { DataTypes } = require('sequelize');
 
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     Ingredient:
+ *       type: object
+ *       description: Zutat im Restaurant inklusive Lagerbestand, Preis und Nährwertverknüpfung
+ *       required:
+ *         - name
+ *         - category
+ *         - restaurantId
+ *         - unit
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *           example: "9b2f4a6d-83a3-4d21-bfb5-9b7a3b97a0a7"
+ *         name:
+ *           type: string
+ *           example: "Tomaten"
+ *         description:
+ *           type: string
+ *           example: "Frische Bio-Tomaten aus Italien"
+ *         category:
+ *           type: string
+ *           enum: [vegetable, meat, dairy, spice, other]
+ *           example: "vegetable"
+ *         restaurantId:
+ *           type: string
+ *           format: uuid
+ *           example: "ae12bc34-de56-78f9-ab12-34cd56ef7890"
+ *           description: Zugehörige Restaurant-ID (Multi-Tenant)
+ *         unit:
+ *           type: string
+ *           example: "g"
+ *         pricePerUnit:
+ *           type: number
+ *           format: float
+ *           example: 1.50
+ *         costPerUnit:
+ *           type: number
+ *           format: float
+ *           example: 1.50
+ *           description: Alias für pricePerUnit (Kompatibilität)
+ *         stockQuantity:
+ *           type: number
+ *           example: 2500
+ *           description: Aktueller Lagerbestand in Einheiten (z. B. g oder ml)
+ *         minStockLevel:
+ *           type: number
+ *           example: 500
+ *           description: Mindestlagerbestand zur Nachbestellung
+ *         supplier:
+ *           type: string
+ *           example: "Fruchtimport GmbH"
+ *         allergens:
+ *           type: array
+ *           items:
+ *             type: string
+ *           example: ["gluten"]
+ *         isActive:
+ *           type: boolean
+ *           example: true
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *           example: "2025-10-31T10:00:00Z"
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
+ *           example: "2025-10-31T11:30:00Z"
+ */
+
 module.exports = (sequelize) => {
-  const Ingredient = sequelize.define('Ingredient', {
-    id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
-      primaryKey: true
-    },
-    name: {
-      type: DataTypes.STRING(255),
-      allowNull: false,
-      unique: true,
-      validate: {
-        notEmpty: true
-      }
-    },
-    description: {
-      type: DataTypes.TEXT,
-      allowNull: true
-    },
-    unit: {
-      type: DataTypes.ENUM('g', 'kg', 'ml', 'l', 'piece', 'tbsp', 'tsp', 'cup'),
-      allowNull: false,
-      defaultValue: 'g'
-    },
-    
-    // Pricing & Stock
-    pricePerUnit: {
-      type: DataTypes.DECIMAL(10, 4),
-      defaultValue: 0,
-      field: 'price_per_unit'
-    },
-    stockQuantity: {
-      type: DataTypes.DECIMAL(10, 2),
-      defaultValue: 0,
-      field: 'stock_quantity'
-    },
-    minStock: {
-      type: DataTypes.DECIMAL(10, 2),
-      defaultValue: 0,
-      field: 'min_stock'
-    },
-    
-    // Supplier Info
-    supplier: {
-      type: DataTypes.STRING(255),
-      allowNull: true
-    },
-    supplierCode: {
-      type: DataTypes.STRING(100),
-      allowNull: true,
-      field: 'supplier_code'
-    },
-    
-    // Additional Info
-    allergens: {
-      type: DataTypes.ARRAY(DataTypes.STRING),
-      defaultValue: []
-    },
-    storageInfo: {
-      type: DataTypes.TEXT,
-      allowNull: true,
-      field: 'storage_info'
-    },
-    shelfLife: {
-      type: DataTypes.INTEGER,
-      allowNull: true,
-      field: 'shelf_life'
-    },
-    
-    // Status
-    isActive: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: true,
-      field: 'is_active'
-    }
-  }, {
-    tableName: 'ingredients',
-    timestamps: true,
-    underscored: true,
-    indexes: [
-      { fields: ['name'] },
-      { fields: ['supplier'] },
-      { fields: ['is_active'] },
-      {
-        name: 'low_stock_idx',
-        fields: ['stock_quantity', 'min_stock'],
-        where: sequelize.literal('"is_active" = true')
-      }
-    ]
-  });
-
-  // Associations
-  Ingredient.associate = (models) => {
-    // Many-to-Many with Products through ProductIngredient
-    Ingredient.belongsToMany(models.Product, {
-      through: models.ProductIngredient,
-      foreignKey: 'ingredientId',
-      as: 'products'
-    });
-
-    // One-to-One with Nutrition (polymorphic)
-    Ingredient.hasOne(models.Nutrition, {
-      foreignKey: 'entityId',
-      constraints: false,
-      as: 'nutrition'
-    });
-  };
-
-  // Instance Methods
-  Ingredient.prototype.getNutrition = async function() {
-    const models = require('./index');
-    return await models.Nutrition.findOne({
-      where: {
-        entityType: 'ingredient',
-        entityId: this.id
-      }
-    });
-  };
-
-  Ingredient.prototype.isLowStock = function() {
-    return parseFloat(this.stockQuantity) <= parseFloat(this.minStock);
-  };
-
-  Ingredient.prototype.getTotalValue = function() {
-    return parseFloat(this.stockQuantity) * parseFloat(this.pricePerUnit);
-  };
-
-  Ingredient.prototype.getUsageInProducts = async function() {
-    const models = require('./index');
-    const usage = await models.ProductIngredient.findAll({
-      where: { ingredientId: this.id },
-      include: [
-        {
-          model: models.Product,
-          as: 'product',
-          where: { isActive: true }
-        }
-      ]
-    });
-
-    return usage.map(u => ({
-      productId: u.product.id,
-      productName: u.product.name,
-      quantity: u.quantity,
-      unit: u.unit
-    }));
-  };
-
-  Ingredient.prototype.updateStock = async function(quantity, operation = 'add') {
-    const currentStock = parseFloat(this.stockQuantity);
-    const changeAmount = parseFloat(quantity);
-
-    let newStock;
-    if (operation === 'add') {
-      newStock = currentStock + changeAmount;
-    } else if (operation === 'subtract') {
-      newStock = Math.max(0, currentStock - changeAmount);
-    } else {
-      newStock = changeAmount; // set directly
-    }
-
-    await this.update({ stockQuantity: newStock });
-    return newStock;
-  };
-
-  // Class Methods
-  Ingredient.getLowStockIngredients = async function() {
-    return await Ingredient.findAll({
-      where: sequelize.literal('"stock_quantity" <= "min_stock"'),
-      include: [
-        {
-          model: sequelize.models.Nutrition,
-          as: 'nutrition',
-          required: false
-        }
-      ],
-      order: [
-        [sequelize.literal('"stock_quantity" / NULLIF("min_stock", 0)'), 'ASC']
-      ]
-    });
-  };
-
-  Ingredient.getTotalInventoryValue = async function() {
-    const result = await Ingredient.findAll({
-      attributes: [
-        [sequelize.fn('SUM', 
-          sequelize.literal('"stock_quantity" * "price_per_unit"')
-        ), 'totalValue']
-      ],
-      where: { isActive: true },
-      raw: true
-    });
-
-    return parseFloat(result[0]?.totalValue || 0);
-  };
-
-  Ingredient.getByAllergen = async function(allergen) {
-    return await Ingredient.findAll({
-      where: {
-        allergens: {
-          [sequelize.Op.contains]: [allergen]
+  const Ingredient = sequelize.define(
+    'Ingredient',
+    {
+      id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true
+      },
+      name: {
+        type: DataTypes.STRING(255),
+        allowNull: false
+      },
+      description: {
+        type: DataTypes.TEXT,
+        allowNull: true
+      },
+      category: {
+        type: DataTypes.ENUM('vegetable', 'meat', 'dairy', 'spice', 'other'),
+        allowNull: false,
+        defaultValue: 'other'
+      },
+      restaurantId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        field: 'restaurant_id',
+        references: {
+          model: 'restaurants',
+          key: 'id'
         },
-        isActive: true
+        onDelete: 'CASCADE'
+      },
+      unit: {
+        type: DataTypes.STRING(50),
+        allowNull: false,
+        defaultValue: 'g'
+      },
+      pricePerUnit: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: true,
+        field: 'price_per_unit'
+      },
+      // ✅ Alias-Feld für Kompatibilität mit costPerUnit (Frontend & Forecast)
+      costPerUnit: {
+        type: DataTypes.VIRTUAL,
+        get() {
+          return this.getDataValue('pricePerUnit');
+        },
+        set(value) {
+          this.setDataValue('pricePerUnit', value);
+        }
+      },
+      stockQuantity: {
+        type: DataTypes.DECIMAL(10, 2),
+        defaultValue: 0,
+        field: 'stock_quantity'
+      },
+      minStockLevel: {
+        type: DataTypes.DECIMAL(10, 2),
+        defaultValue: 0,
+        field: 'min_stock_level'
+      },
+      supplier: {
+        type: DataTypes.STRING(255),
+        allowNull: true
+      },
+      allergens: {
+        type: DataTypes.ARRAY(DataTypes.STRING),
+        defaultValue: []
+      },
+      isActive: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: true,
+        field: 'is_active'
       }
-    });
+    },
+    {
+      tableName: 'ingredients',
+      timestamps: true,
+      underscored: true,
+      indexes: [
+        { fields: ['name', 'restaurant_id'], name: 'idx_ingredients_name_restaurant' },
+        { fields: ['restaurant_id'], name: 'idx_ingredients_restaurant_id' },
+        { fields: ['is_active'], name: 'idx_ingredients_is_active' }
+      ]
+    }
+  );
+
+  // ===============================
+  // 🔗 Associations
+  // ===============================
+  Ingredient.associate = (models) => {
+    if (models.Restaurant) {
+      Ingredient.belongsTo(models.Restaurant, {
+        foreignKey: 'restaurantId',
+        as: 'restaurant'
+      });
+    }
+
+    if (models.Product && models.ProductIngredient) {
+      Ingredient.belongsToMany(models.Product, {
+        through: models.ProductIngredient,
+        foreignKey: 'ingredientId',
+        as: 'products'
+      });
+    }
+
+    if (models.Nutrition) {
+      Ingredient.hasOne(models.Nutrition, {
+        foreignKey: 'entityId',
+        constraints: false,
+        scope: {
+          entityType: 'ingredient'
+        },
+        as: 'nutrition'
+      });
+    }
   };
 
-  Ingredient.getMostUsed = async function(limit = 10) {
-    const models = require('./index');
-    
-    const results = await sequelize.query(`
-      SELECT 
-        i.id,
-        i.name,
-        i.unit,
-        i.stock_quantity,
-        i.min_stock,
-        COUNT(DISTINCT pi.product_id) as product_count,
-        SUM(pi.quantity) as total_quantity_used
-      FROM ingredients i
-      LEFT JOIN product_ingredients pi ON i.id = pi.ingredient_id
-      LEFT JOIN products p ON pi.product_id = p.id AND p.is_active = true
-      WHERE i.is_active = true
-      GROUP BY i.id, i.name, i.unit, i.stock_quantity, i.min_stock
-      ORDER BY product_count DESC, total_quantity_used DESC
-      LIMIT :limit
-    `, {
-      replacements: { limit },
-      type: sequelize.QueryTypes.SELECT
-    });
+  // ===============================
+  // 🔹 Instance Methods
+  // ===============================
+  Ingredient.prototype.isLowStock = function () {
+    return parseFloat(this.stockQuantity) <= parseFloat(this.minStockLevel);
+  };
 
-    return results;
+  Ingredient.prototype.addStock = async function (quantity) {
+    this.stockQuantity = parseFloat(this.stockQuantity) + parseFloat(quantity);
+    await this.save();
+    return this;
+  };
+
+  Ingredient.prototype.removeStock = async function (quantity) {
+    const newQuantity = parseFloat(this.stockQuantity) - parseFloat(quantity);
+    if (newQuantity < 0) {
+      throw new Error('Insufficient stock');
+    }
+    this.stockQuantity = newQuantity;
+    await this.save();
+    return this;
+  };
+
+  // ===============================
+  // 🔹 Class Methods
+  // ===============================
+  Ingredient.getLowStockItems = async function (restaurantId = null) {
+    const where = { isActive: true };
+    if (restaurantId) where.restaurantId = restaurantId;
+
+    const ingredients = await Ingredient.findAll({ where });
+    return ingredients.filter((ing) => ing.isLowStock());
+  };
+
+  Ingredient.getByAllergen = async function (allergen, restaurantId = null) {
+    const where = {
+      allergens: { [sequelize.Sequelize.Op.contains]: [allergen] },
+      isActive: true
+    };
+    if (restaurantId) where.restaurantId = restaurantId;
+
+    return await Ingredient.findAll({ where });
   };
 
   return Ingredient;

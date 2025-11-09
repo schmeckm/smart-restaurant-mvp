@@ -18,30 +18,82 @@
             <span>Dashboard</span>
           </el-menu-item>
 
-          <el-menu-item index="/products">
-            <el-icon><ShoppingBag /></el-icon>
-            <span>Produkte</span>
-          </el-menu-item>
+          <!-- 📂 STAMMDATEN UNTERMENÜ -->
+          <el-sub-menu index="stammdaten">
+            <template #title>
+              <el-icon><Files /></el-icon>
+              <span>Stammdaten</span>
+            </template>
 
-          <el-menu-item index="/categories">
-            <el-icon><Grid /></el-icon>
-            <span>Kategorien</span>
-          </el-menu-item>
+            <el-menu-item index="/products">
+              <el-icon><ShoppingBag /></el-icon>
+              <span>Produkte</span>
+            </el-menu-item>
 
-          <el-menu-item index="/ingredients">
-            <el-icon><Box /></el-icon>
-            <span>Zutaten</span>
-          </el-menu-item>
+            <el-menu-item index="/categories">
+              <el-icon><Grid /></el-icon>
+              <span>Kategorien</span>
+            </el-menu-item>
 
-          <el-menu-item index="/recipes">
-            <el-icon><Reading /></el-icon>
-            <span>Rezepte</span>
-          </el-menu-item>
+            <el-menu-item index="/ingredients">
+              <el-icon><Box /></el-icon>
+              <span>Zutaten</span>
+            </el-menu-item>
 
-          <el-menu-item index="/forecasting">
-            <el-icon><TrendCharts /></el-icon>
-            <span>Forecasting</span>
-          </el-menu-item>
+            <el-menu-item index="/recipes">
+              <el-icon><Reading /></el-icon>
+              <span>Rezepte</span>
+            </el-menu-item>
+
+            <!-- 🏢 Restaurant-Stammdaten -->
+            <el-menu-item index="/restaurant">
+              <el-icon><OfficeBuilding /></el-icon>
+              <span>Restaurant</span>
+            </el-menu-item>
+          </el-sub-menu>
+
+          <!-- 👥 PERSONAL UNTERMENÜ -->
+          <el-sub-menu index="personal">
+            <template #title>
+              <el-icon><User /></el-icon>
+              <span>Personal</span>
+            </template>
+
+            <el-menu-item index="/employees">
+              <el-icon><UserFilled /></el-icon>
+              <span>Mitarbeiter</span>
+            </el-menu-item>
+
+            <!-- 🕒 ZEITMANAGEMENT -->
+            <el-menu-item index="/timemanagement/scheduling">
+              <el-icon><Timer /></el-icon>
+              <span>Resourcenplanung</span>
+            </el-menu-item>
+          </el-sub-menu>
+
+          <!-- 📊 ANALYTICS UNTERMENÜ -->
+          <el-sub-menu index="analytics">
+            <template #title>
+              <el-icon><TrendCharts /></el-icon>
+              <span>Analytics</span>
+            </template>
+
+            <el-menu-item index="/forecasting">
+              <el-icon><DataAnalysis /></el-icon>
+              <span>Forecasting</span>
+            </el-menu-item>
+
+            <el-menu-item index="/financial">
+              <el-icon><Money /></el-icon>
+              <span>Financial Insights</span>
+            </el-menu-item>
+
+            <!-- 🤖 KI-Planung -->
+            <el-menu-item index="/ai-scheduling">
+              <el-icon><Timer /></el-icon>
+              <span>KI-Schichtplanung</span>
+            </el-menu-item>
+          </el-sub-menu>
 
           <el-menu-item index="/sales">
             <el-icon><ShoppingCart /></el-icon>
@@ -71,7 +123,10 @@
           <div class="header-right">
             <el-dropdown @command="handleCommand">
               <span class="user-info">
-                <el-avatar :size="32" src="https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png" />
+                <el-avatar
+                  :size="32"
+                  src="https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png"
+                />
                 <span class="user-name">{{ user?.name || 'User' }}</span>
               </span>
               <template #dropdown>
@@ -105,16 +160,22 @@
 import { computed, watch, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter, useRoute } from 'vue-router'
-import { 
-  Odometer, 
+import {
+  Odometer,
   ShoppingBag,
   Grid,
-  Box, 
+  Box,
   Reading,
   TrendCharts,
-  ShoppingCart, 
-  User, 
-  SwitchButton 
+  ShoppingCart,
+  User,
+  SwitchButton,
+  Money,
+  Files,
+  DataAnalysis,
+  Timer,        // ⏰ Für Zeitmanagement & KI-Schichtplanung
+  UserFilled,
+  OfficeBuilding
 } from '@element-plus/icons-vue'
 
 export default {
@@ -128,7 +189,13 @@ export default {
     TrendCharts,
     ShoppingCart,
     User,
-    SwitchButton
+    SwitchButton,
+    Money,
+    Files,
+    DataAnalysis,
+    Timer,
+    UserFilled,
+    OfficeBuilding
   },
   setup() {
     const store = useStore()
@@ -146,7 +213,11 @@ export default {
         '/categories': 'Kategorien',
         '/ingredients': 'Zutaten',
         '/recipes': 'Rezepte',
+        '/employees': 'Mitarbeiter',
+        '/timemanagement/scheduling': 'Zeitmanagement & Schichtplanung',
         '/forecasting': 'Forecasting Board',
+        '/financial': 'Financial Insights',
+        '/ai-scheduling': 'KI-Schichtplanung',
         '/sales': 'Verkäufe',
         '/profile': 'Profil'
       }
@@ -174,7 +245,6 @@ export default {
         router.push('/login')
       }).catch((error) => {
         console.error('Logout error:', error)
-        // Bei Fehler trotzdem zur Login-Seite
         router.push('/login')
       })
     }
@@ -205,7 +275,7 @@ html, body {
 
 #app {
   height: 100%;
-  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
     'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
 }
 
@@ -252,6 +322,43 @@ html, body {
   color: #fff;
 }
 
+/* 📂 Submenu Styling */
+.sidebar-menu .el-sub-menu__title {
+  color: #bfcbd9 !important;
+}
+
+.sidebar-menu .el-sub-menu__title:hover {
+  background: #263445 !important;
+  color: #fff !important;
+}
+
+.sidebar-menu .el-sub-menu .el-menu-item {
+  padding-left: 50px !important;
+  background: #263445 !important;
+  border-left: 3px solid transparent;
+}
+
+.sidebar-menu .el-sub-menu .el-menu-item:hover {
+  background: #1f2d3d !important;
+  border-left-color: #409eff;
+}
+
+.sidebar-menu .el-sub-menu .el-menu-item.is-active {
+  background: #409eff !important;
+  border-left-color: #67c23a;
+}
+
+/* Sub-Menu Icons */
+.sidebar-menu .el-sub-menu .el-menu-item .el-icon {
+  font-size: 14px;
+  margin-right: 8px;
+}
+
+/* Submenu Arrow */
+.sidebar-menu .el-sub-menu__icon-arrow {
+  color: #bfcbd9;
+}
+
 .sidebar-footer {
   padding: 20px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
@@ -292,5 +399,20 @@ html, body {
 .main-content {
   background: #f0f2f5;
   overflow-y: auto;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .sidebar {
+    width: 200px !important;
+  }
+
+  .logo h2 {
+    font-size: 18px;
+  }
+
+  .sidebar-menu .el-sub-menu .el-menu-item {
+    padding-left: 40px !important;
+  }
 }
 </style>

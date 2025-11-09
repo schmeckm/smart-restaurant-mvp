@@ -1,493 +1,200 @@
 // backend/src/controllers/productController.js
-// Example Controller using the fixed UUID models
-
-const { Product, Ingredient, ProductIngredient, Category, Nutrition } = require('../models');
+const { Product, Category, Ingredient, ProductIngredient, Nutrition } = require('../models');
 const { Op } = require('sequelize');
 
-/**
- * @desc    Get all products with ingredients and nutrition
- * @route   GET /api/v1/products
- * @access  Public
- */
+// @desc    Get all products
+// @route   GET /api/v1/products
+// @access  Private
 exports.getAllProducts = async (req, res) => {
   try {
-    const { 
-      category, 
-      isActive = true, 
-      search,
-      page = 1,
-      limit = 10
-    } = req.query;
+    console.log('🧩 [DEBUG] req.user =', req.user);
 
-    // Build filter
-    const where = { isActive };
-    
-    if (category) {
-      where.categoryId = category;
-    }
-
-    if (search) {
-      where[Op.or] = [
-        { name: { [Op.iLike]: `%${search}%` } },
-        { description: { [Op.iLike]: `%${search}%` } }
-      ];
-    }
-
-    // Pagination
-    const offset = (page - 1) * limit;
-
-    const { count, rows: products } = await Product.findAndCountAll({
-      where,
+    const products = await Product.findAll({
+      where: { 
+        restaurantId: req.user?.restaurantId, // ✅ FIXED
+        isActive: true
+      },
       include: [
-        {
-          model: Category,
-          as: 'category',
-          attributes: ['id', 'name', 'color', 'icon']
-        },
-        {
-          model: Ingredient,
-          as: 'ingredients',
-          through: {
-            attributes: ['quantity', 'unit', 'preparationNote', 'isOptional']
-          }
-        }
+        { model: Category, as: 'category', attributes: ['id', 'name', 'color', 'icon'] },
+        { model: Ingredient, as: 'ingredients', through: { attributes: ['quantity', 'unit'] }, attributes: ['id', 'name', 'unit'] }
       ],
-      limit: parseInt(limit),
-      offset: parseInt(offset),
-      order: [['sortOrder', 'ASC'], ['name', 'ASC']],
-      distinct: true
+      order: [['sortOrder', 'ASC'], ['name', 'ASC']]
     });
 
-    res.status(200).json({
-      success: true,
-      data: products,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: count,
-        pages: Math.ceil(count / limit)
-      }
-    });
+    res.json({ success: true, count: products.length, data: products });
   } catch (error) {
-    console.error('❌ Error fetching products:', error);
+    console.error('❌ [BACKEND ERROR] Get all products error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching products',
+      message: 'Fehler beim Laden der Produkte',
       error: error.message
     });
   }
 };
 
-/**
- * @desc    Get single product with full details
- * @route   GET /api/v1/products/:id
- * @access  Public
- */
+// @desc    Get single product
+// @route   GET /api/v1/products/:id
+// @access  Private
 exports.getProduct = async (req, res) => {
   try {
-    const { id } = req.params;
-
-    const product = await Product.findByPk(id, {
+    const product = await Product.findOne({
+      where: { 
+        id: req.params.id,
+        restaurantId: req.user.restaurantId  // ✅ FIXED
+      },
       include: [
-        {
-          model: Category,
-          as: 'category'
-        },
-        {
+        { model: Category, as: 'category' },
+        { 
           model: Ingredient,
           as: 'ingredients',
-          through: {
-            attributes: ['quantity', 'unit', 'preparationNote', 'isOptional', 'sortOrder']
+          through: { 
+            attributes: ['quantity', 'unit', 'preparationNote', 'isOptional', 'sortOrder'] 
           }
-        }
+        },
+        { model: Nutrition, as: 'nutrition' }
       ]
     });
 
     if (!product) {
       return res.status(404).json({
         success: false,
-        message: 'Product not found'
+        message: 'Produkt nicht gefunden'
       });
     }
 
-    // Calculate additional info
-    const cost = await product.calculateCost();
-    const margin = await product.getMargin();
-    const nutrition = await product.calculateNutrition();
-    const availability = await product.checkIngredientsAvailability();
-
-    res.status(200).json({
-      success: true,
-      data: {
-        ...product.toJSON(),
-        calculated: {
-          cost,
-          margin,
-          nutrition,
-          availability,
-          totalTime: product.getTotalTime()
-        }
-      }
-    });
+    res.json({ success: true, data: product });
   } catch (error) {
-    console.error('❌ Error fetching product:', error);
+    console.error('❌ Get product error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching product',
+      message: 'Fehler beim Laden des Produkts',
       error: error.message
     });
   }
 };
 
-/**
- * @desc    Create new product with recipe
- * @route   POST /api/v1/products
- * @access  Private/Admin
- */
+// @desc    Create product
+// @route   POST /api/v1/products
+// @access  Private (admin/manager)
 exports.createProduct = async (req, res) => {
-  const transaction = await Product.sequelize.transaction();
-  
   try {
-    const {
-      name,
-      description,
-      categoryId,
-      price,
-      instructions,
-      prepTime,
-      cookTime,
-      servings,
-      difficulty,
-      tags,
-      imageUrl,
-      isActive,
-      ingredients // Array: [{ ingredientId, quantity, unit, preparationNote, isOptional }]
-    } = req.body;
+    console.log('🧩 Creating product for user:', req.user);
 
-    // Validate required fields
-    if (!name || !price) {
-      return res.status(400).json({
-        success: false,
-        message: 'Name and price are required'
-      });
-    }
+    const productData = {
+      ...req.body,
+      restaurantId: req.user.restaurantId, // ✅ FIXED
+      isActive: req.body.isActive ?? true
+    };
 
-    // Create product
-    const product = await Product.create({
-      name,
-      description,
-      categoryId,
-      price,
-      instructions,
-      prepTime,
-      cookTime,
-      servings,
-      difficulty,
-      tags,
-      imageUrl,
-      isActive
-    }, { transaction });
+    const product = await Product.create(productData);
 
-    // Add ingredients (recipe)
-    if (ingredients && ingredients.length > 0) {
-      const productIngredients = ingredients.map((ing, index) => ({
-        productId: product.id,
-        ingredientId: ing.ingredientId,
-        quantity: ing.quantity,
-        unit: ing.unit || 'g',
-        preparationNote: ing.preparationNote,
-        isOptional: ing.isOptional || false,
-        sortOrder: ing.sortOrder || index
-      }));
-
-      await ProductIngredient.bulkCreate(productIngredients, { transaction });
-    }
-
-    await transaction.commit();
-
-    // Fetch complete product data
-    const createdProduct = await Product.findByPk(product.id, {
-      include: [
-        {
-          model: Category,
-          as: 'category'
-        },
-        {
-          model: Ingredient,
-          as: 'ingredients',
-          through: {
-            attributes: ['quantity', 'unit', 'preparationNote', 'isOptional']
-          }
-        }
-      ]
-    });
-
-    res.status(201).json({
-      success: true,
-      data: createdProduct,
-      message: 'Product created successfully'
-    });
+    res.status(201).json({ success: true, data: product });
   } catch (error) {
-    await transaction.rollback();
-    console.error('❌ Error creating product:', error);
+    console.error('❌ Create product error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error creating product',
+      message: 'Fehler beim Erstellen des Produkts',
       error: error.message
     });
   }
 };
 
-/**
- * @desc    Update product and recipe
- * @route   PUT /api/v1/products/:id
- * @access  Private/Admin
- */
+// @desc    Update product
+// @route   PUT /api/v1/products/:id
+// @access  Private (admin/manager)
 exports.updateProduct = async (req, res) => {
-  const transaction = await Product.sequelize.transaction();
-  
   try {
-    const { id } = req.params;
-    const {
-      name,
-      description,
-      categoryId,
-      price,
-      instructions,
-      prepTime,
-      cookTime,
-      servings,
-      difficulty,
-      tags,
-      imageUrl,
-      isActive,
-      ingredients
-    } = req.body;
+    console.log('🧩 Update product request:', req.params.id, req.user);
 
-    // Find product
-    const product = await Product.findByPk(id);
-    
+    const product = await Product.findOne({
+      where: {
+        id: req.params.id,
+        restaurantId: req.user.restaurantId  // ✅ FIXED
+      }
+    });
+
     if (!product) {
-      await transaction.rollback();
       return res.status(404).json({
         success: false,
-        message: 'Product not found'
+        message: 'Produkt nicht gefunden'
       });
     }
 
-    // Update product
-    await product.update({
-      name,
-      description,
-      categoryId,
-      price,
-      instructions,
-      prepTime,
-      cookTime,
-      servings,
-      difficulty,
-      tags,
-      imageUrl,
-      isActive
-    }, { transaction });
+    await product.update(req.body);
 
-    // Update ingredients if provided
-    if (ingredients !== undefined) {
-      // Delete old ingredients
-      await ProductIngredient.destroy({
-        where: { productId: id },
-        transaction
-      });
-
-      // Add new ingredients
-      if (ingredients.length > 0) {
-        const productIngredients = ingredients.map((ing, index) => ({
-          productId: id,
-          ingredientId: ing.ingredientId,
-          quantity: ing.quantity,
-          unit: ing.unit || 'g',
-          preparationNote: ing.preparationNote,
-          isOptional: ing.isOptional || false,
-          sortOrder: ing.sortOrder || index
-        }));
-
-        await ProductIngredient.bulkCreate(productIngredients, { transaction });
-      }
-    }
-
-    await transaction.commit();
-
-    // Fetch updated product
-    const updatedProduct = await Product.findByPk(id, {
-      include: [
-        {
-          model: Category,
-          as: 'category'
-        },
-        {
-          model: Ingredient,
-          as: 'ingredients',
-          through: {
-            attributes: ['quantity', 'unit', 'preparationNote', 'isOptional']
-          }
-        }
-      ]
-    });
-
-    res.status(200).json({
-      success: true,
-      data: updatedProduct,
-      message: 'Product updated successfully'
-    });
+    res.status(200).json({ success: true, data: product });
   } catch (error) {
-    await transaction.rollback();
-    console.error('❌ Error updating product:', error);
+    console.error('❌ Update product error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error updating product',
+      message: 'Fehler beim Aktualisieren des Produkts',
       error: error.message
     });
   }
 };
 
-/**
- * @desc    Delete product
- * @route   DELETE /api/v1/products/:id
- * @access  Private/Admin
- */
+// @desc    Delete product
+// @route   DELETE /api/v1/products/:id
+// @access  Private (admin)
 exports.deleteProduct = async (req, res) => {
   try {
-    const { id } = req.params;
-
-    const product = await Product.findByPk(id);
-    
-    if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: 'Product not found'
-      });
-    }
-
-    // Soft delete (set isActive to false)
-    await product.update({ isActive: false });
-
-    // Or hard delete:
-    // await product.destroy();
-
-    res.status(200).json({
-      success: true,
-      message: 'Product deleted successfully'
-    });
-  } catch (error) {
-    console.error('❌ Error deleting product:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error deleting product',
-      error: error.message
-    });
-  }
-};
-
-/**
- * @desc    Check product availability (ingredients in stock)
- * @route   GET /api/v1/products/:id/availability
- * @access  Public
- */
-exports.checkAvailability = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { quantity = 1 } = req.query;
-
-    const product = await Product.findByPk(id);
-    
-    if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: 'Product not found'
-      });
-    }
-
-    const availability = await product.checkIngredientsAvailability(parseInt(quantity));
-
-    const isAvailable = availability.every(item => item.isAvailable);
-
-    res.status(200).json({
-      success: true,
-      data: {
-        productId: id,
-        productName: product.name,
-        quantityRequested: parseInt(quantity),
-        isAvailable,
-        ingredients: availability
+    const product = await Product.findOne({
+      where: { 
+        id: req.params.id,
+        restaurantId: req.user.restaurantId  // ✅ FIXED
       }
     });
-  } catch (error) {
-    console.error('❌ Error checking availability:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error checking availability',
-      error: error.message
-    });
-  }
-};
 
-/**
- * @desc    Get product cost analysis
- * @route   GET /api/v1/products/:id/cost-analysis
- * @access  Private
- */
-exports.getCostAnalysis = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const product = await Product.findByPk(id, {
-      include: [
-        {
-          model: Ingredient,
-          as: 'ingredients',
-          through: {
-            attributes: ['quantity', 'unit']
-          }
-        }
-      ]
-    });
-    
     if (!product) {
       return res.status(404).json({
         success: false,
-        message: 'Product not found'
+        message: 'Produkt nicht gefunden'
       });
     }
 
-    const recipe = await product.getRecipe();
-    const ingredientCosts = recipe.map(item => ({
-      ingredientName: item.ingredient?.name,
-      quantity: item.quantity,
-      unit: item.unit,
-      pricePerUnit: item.ingredient?.pricePerUnit,
-      totalCost: item.calculateCost()
-    }));
+    await product.update({ isActive: false }); // Soft delete
 
-    const margin = await product.getMargin();
-
-    res.status(200).json({
+    res.json({
       success: true,
-      data: {
-        productId: id,
-        productName: product.name,
-        sellingPrice: product.price,
-        ingredients: ingredientCosts,
-        ...margin
-      }
+      message: 'Produkt erfolgreich gelöscht',
+      data: {}
     });
   } catch (error) {
-    console.error('❌ Error analyzing costs:', error);
+    console.error('❌ Delete product error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error analyzing costs',
+      message: 'Fehler beim Löschen des Produkts',
       error: error.message
     });
   }
 };
 
-module.exports = exports;
+// @desc    Get products by category
+// @route   GET /api/v1/products/category/:categoryId
+// @access  Private
+exports.getProductsByCategory = async (req, res) => {
+  try {
+    const products = await Product.findAll({
+      where: { 
+        categoryId: req.params.categoryId,
+        restaurantId: req.user.restaurantId,  // ✅ FIXED
+        isActive: true 
+      },
+      include: [{ model: Category, as: 'category' }],
+      order: [['sortOrder', 'ASC'], ['name', 'ASC']]
+    });
+
+    res.json({
+      success: true,
+      count: products.length,
+      data: products
+    });
+  } catch (error) {
+    console.error('❌ Get products by category error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Fehler beim Laden der Produkte',
+      error: error.message
+    });
+  }
+};

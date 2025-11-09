@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import store from '@/store'
 import { getToken } from '@/utils/auth'
 
-// Public routes
+// 🟢 Öffentliche Routen
 const publicRoutes = [
   {
     path: '/login',
@@ -18,7 +18,7 @@ const publicRoutes = [
   }
 ]
 
-// Protected routes
+// 🔒 Geschützte Routen
 const protectedRoutes = [
   {
     path: '/',
@@ -55,23 +55,59 @@ const protectedRoutes = [
     meta: { title: 'Rezepte', requiresAuth: true }
   },
   {
-    path: '/ai-recipe-chat',
-    name: 'AIRecipeChat',
-    component: () => import('@/views/AIRecipeChat.vue'),
-    meta: { title: 'AI Rezept-Generator', requiresAuth: true }
+    path: '/restaurant',
+    name: 'Restaurant',
+    component: () => import('@/views/restaurant/RestaurantView.vue'),
+    meta: { title: 'Restaurant-Stammdaten', requiresAuth: true }
   },
+
+  // 👥 Mitarbeiter (Dateiname korrigiert)
+  {
+    path: '/employees',
+    name: 'Employees',
+    component: () => import('@/views/employees/EmployeeList.vue'),
+    meta: { title: 'Mitarbeiter', requiresAuth: true }
+  },
+
+  // 🕒 Zeitmanagement (dein neuer View)
+  {
+    path: '/timemanagement/scheduling',
+    name: 'Scheduling',
+    component: () => import('@/views/timemanagement/Scheduling.vue'),
+    meta: { title: 'Zeitmanagement & Schichtplanung', requiresAuth: true }
+  },
+
+  // 📊 Forecasting (Pfad korrigiert)
+  {
+    path: '/forecasting',
+    name: 'Forecasting',
+    component: () => import('@/views/forecasting/ForecastingBoard.vue'),
+    meta: { title: 'Forecasting Board', requiresAuth: true }
+  },
+
+  // 💰 Financial (Pfad korrigiert)
+  {
+    path: '/financial',
+    name: 'Financial',
+    component: () => import('@/views/financial/FinancialDashboard.vue'),
+    meta: { title: 'Financial Insights', requiresAuth: true }
+  },
+{
+  path: '/ai-scheduling',
+  name: 'AIScheduling',
+  component: () => import('@/views/scheduling/AIScheduling.vue'),
+  meta: { title: '🤖 KI-Schichtplanung', requiresAuth: true }
+},
+
+
   {
     path: '/sales',
     name: 'Sales',
     component: () => import('@/views/sales/SalesList.vue'),
     meta: { title: 'Verkäufe', requiresAuth: true }
   },
-  {
-    path: '/forecasting',  // ⬅️ NEU!
-    name: 'Forecasting',
-    component: () => import('@/views/forecasting/ForecastingBoard.vue'),
-    meta: { title: 'Forecasting', requiresAuth: true }
-  },
+
+  // 👤 Profil (Pfad korrigiert)
   {
     path: '/profile',
     name: 'Profile',
@@ -80,58 +116,23 @@ const protectedRoutes = [
   }
 ]
 
-const routes = [...publicRoutes, ...protectedRoutes]
-
+// 🧭 Router erstellen (Vue CLI kompatibel)
 const router = createRouter({
   history: createWebHistory(process.env.BASE_URL),
-  routes
+  routes: [...publicRoutes, ...protectedRoutes]
 })
 
-// Navigation guard
-router.beforeEach(async (to, from, next) => {
-  // Set page title
-  document.title = to.meta.title ? `${to.meta.title} - Restaurant` : 'Restaurant'
+// 🛡️ Navigation Guard
+router.beforeEach((to, from, next) => {
+  const token = getToken()
 
-  const hasToken = getToken()
-
-  if (hasToken) {
-    if (to.path === '/login') {
-      // If logged in, redirect to dashboard
-      next({ path: '/dashboard' })
-    } else {
-      // Check if user info exists
-      const hasRoles = store.getters['user/roles'] && store.getters['user/roles'].length > 0
-      
-      if (hasRoles) {
-        next()
-      } else {
-        try {
-          // Get user info
-          await store.dispatch('user/getInfo')
-          next()
-        } catch (error) {
-          // Token invalid, logout
-          await store.dispatch('user/resetToken')
-          next(`/login?redirect=${to.path}`)
-        }
-      }
-    }
+  if (to.meta.requiresAuth && !token) {
+    next({ path: '/login' })
+  } else if (token && to.path === '/login') {
+    next({ path: '/dashboard' })
   } else {
-    // No token
-    if (to.meta.requiresAuth === false) {
-      next()
-    } else {
-      next(`/login?redirect=${to.path}`)
-    }
+    next()
   }
 })
-
-export function resetRouter() {
-  const newRouter = createRouter({
-    history: createWebHistory(process.env.BASE_URL),
-    routes: routes
-  })
-  router.matcher = newRouter.matcher
-}
 
 export default router

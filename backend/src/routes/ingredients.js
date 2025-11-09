@@ -3,10 +3,19 @@
 
 const express = require('express');
 const router = express.Router();
-const ingredientController = require('../controllers/ingredientController');
 const { protect } = require('../middleware/auth');
+const {
+  getAllIngredients,
+  getIngredient,
+  createIngredient,
+  updateIngredient,
+  deleteIngredient,
+  getLowStockIngredients,
+  updateStock,
+  getIngredientNutrition
+} = require('../controllers/ingredientController');
 
-// All routes require authentication
+// Alle Routen erfordern Authentifizierung
 router.use(protect);
 
 /**
@@ -14,48 +23,55 @@ router.use(protect);
  * @desc    Get all ingredients
  * @access  Private
  */
-router.get('/', ingredientController.getAllIngredients);
+router.get('/', getAllIngredients);
 
 /**
  * @route   GET /api/v1/ingredients/low-stock
  * @desc    Get low stock ingredients
  * @access  Private
  */
-router.get('/low-stock', ingredientController.getLowStockIngredients);
+router.get('/low-stock', getLowStockIngredients);
+
+/**
+ * @route   GET /api/v1/ingredients/:id/nutrition
+ * @desc    Lazy load Nutrition data for ingredient
+ * @access  Private
+ */
+router.get('/:id/nutrition', getIngredientNutrition);
 
 /**
  * @route   GET /api/v1/ingredients/:id
  * @desc    Get single ingredient
  * @access  Private
  */
-router.get('/:id', ingredientController.getIngredient);
+router.get('/:id', getIngredient);
 
 /**
  * @route   POST /api/v1/ingredients
  * @desc    Create new ingredient
  * @access  Private (admin/manager)
  */
-router.post('/', ingredientController.createIngredient);
-
-/**
- * @route   POST /api/v1/ingredients/bulk-delete
- * @desc    Bulk delete ingredients
- * @access  Private (admin)
- */
-router.post('/bulk-delete', ingredientController.bulkDeleteIngredients);
+router.post('/', createIngredient);
 
 /**
  * @route   PUT /api/v1/ingredients/:id
  * @desc    Update ingredient
  * @access  Private (admin/manager)
  */
-router.put('/:id', ingredientController.updateIngredient);
+router.put('/:id', updateIngredient);
+
+/**
+ * @route   PATCH /api/v1/ingredients/:id/stock
+ * @desc    Update ingredient stock
+ * @access  Private (admin/manager)
+ */
+router.patch('/:id/stock', updateStock);
 
 /**
  * @route   DELETE /api/v1/ingredients/:id
  * @desc    Delete ingredient
  * @access  Private (admin)
  */
-router.delete('/:id', ingredientController.deleteIngredient);
+router.delete('/:id', deleteIngredient);
 
 module.exports = router;
